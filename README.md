@@ -442,3 +442,9 @@ teammates can tell the two files apart.
 To publish a version, push a tag such as `v0.2.1` from this repo. Then, on the repo's "Releases" page
 on github.com, create a release from that tag and upload the `.tgz` file that `npm pack` wrote. The
 install URL in the "Install" section works as soon as the file is uploaded.
+
+Never replace the `.tgz` file of a release that someone has installed. When a teammate installs the
+package, their `package-lock.json` stores a hash of the file in its `integrity` field. If the file at the
+same URL changes later, `npm ci` on their laptop or CI downloads a file with a different hash and stops
+with an `EINTEGRITY` error. Publish every change under a new version number instead, with a new tag and
+a new release.
