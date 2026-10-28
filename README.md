@@ -269,19 +269,19 @@ The rule ignores the domain and the query. The `/` at the start of the rule is o
 paste a full URL from the DevTools Network tab, and the rule keeps only the path of that URL.
 
 This table uses one real request, with its host replaced by the invented `api.example.com`:
-`https://api.example.com/external/automated/api/v1.0/Automation/GetAllAutomations?Page=1`.
-Its path is `/external/automated/api/v1.0/Automation/GetAllAutomations`.
+`https://api.example.com/external/shop/api/v1.0/Order/GetAllOrders?Page=1`.
+Its path is `/external/shop/api/v1.0/Order/GetAllOrders`.
 
 | You type in "Request path" | Result | Why |
 |---|---|---|
-| `/Automation/GetAllAutomations` | match | The path ends with these two segments. |
-| `automated/api/v1.0/Automation/GetAllAutomations` | match | The rule adds the missing `/` at the start. |
+| `/Order/GetAllOrders` | match | The path ends with these two segments. |
+| `shop/api/v1.0/Order/GetAllOrders` | match | The rule adds the missing `/` at the start. |
 | The full URL, pasted from the Network tab | match | The rule keeps only the path, and the query is ignored. |
-| `/Automation/*` | match | `/*` matches the `Automation` segment anywhere in the path, and every path under it. |
-| `/GetAll` | no match | `GetAll` is only part of the segment `GetAllAutomations`. |
-| `/Automation` | no match | The path does not end with `/Automation`. |
+| `/Order/*` | match | `/*` matches the `Order` segment anywhere in the path, and every path under it. |
+| `/GetAll` | no match | `GetAll` is only part of the segment `GetAllOrders`. |
+| `/Order` | no match | The path does not end with `/Order`. |
 
-When you turn on the "Match the query too" switch, the query must be equal too. The rule `/Automation/GetAllAutomations?Page=1`
+When you turn on the "Match the query too" switch, the query must be equal too. The rule `/Order/GetAllOrders?Page=1`
 then matches `?Page=1`, but not `?Page=2` and not a request without a query. A rule that ends with `/*`
 always ignores the query.
 

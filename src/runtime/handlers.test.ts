@@ -31,13 +31,13 @@ describe('handlers', () => {
   it('waits for delayMs on a rule typed without the leading slash and the gateway prefix', async () => {
     errorController.addConfig({
       scenario: 'slow',
-      endpoints: ['automated/api/v1.0/Automation/GetAllAutomations'],
+      endpoints: ['shop/api/v1.0/Order/GetAllOrders'],
       delayMs: 50,
     })
     const started = Date.now()
     const response = await getResponse(
       handlers,
-      request('https://api.example.com/external/automated/api/v1.0/Automation/GetAllAutomations?Page=1'),
+      request('https://api.example.com/external/shop/api/v1.0/Order/GetAllOrders?Page=1'),
     )
     expect(response).toBeUndefined()
     // Node timers can fire about 1 ms early, so the check allows 5 ms of slack.

@@ -45,8 +45,8 @@ export function parseEndpoint(endpoint: string): { path: string; query: string }
 const dropTrailingSlash = (path: string) => (path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path)
 
 /**
- * Compares whole path segments from the end of the path: `/Automation/GetAll` matches `/v1/Automation/GetAll` but not
- * `/v1/MyAutomation/GetAll`. `/api/orders/*` matches `/api/orders` and every path under it, wherever it sits. A trailing
+ * Compares whole path segments from the end of the path: `/Order/GetAll` matches `/v1/Order/GetAll` but not
+ * `/v1/MyOrder/GetAll`. `/api/orders/*` matches `/api/orders` and every path under it, wherever it sits. A trailing
  * "/" on either side is ignored, and the rule "/" matches the root path only.
  */
 function matchesPath(path: string, pattern: string): boolean {

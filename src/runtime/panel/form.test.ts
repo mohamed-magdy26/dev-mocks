@@ -109,7 +109,7 @@ describe('describeRule', () => {
     expect(
       describeRule({
         scenario: 'slow',
-        endpoints: ['automated/api/v1.0/Automation/GetAllAutomations'],
+        endpoints: ['shop/api/v1.0/Order/GetAllOrders'],
         delayMs: 9969,
         matchFullUrl: false,
       }),
@@ -131,9 +131,9 @@ describe('helpers', () => {
   })
 
   it('splits a path before its last two segments', () => {
-    expect(pathParts('/external/automated/api/v1.0/Automation/GetAllAutomations')).toEqual({
-      head: '/external/automated/api/v1.0/',
-      tail: 'Automation/GetAllAutomations',
+    expect(pathParts('/external/shop/api/v1.0/Order/GetAllOrders')).toEqual({
+      head: '/external/shop/api/v1.0/',
+      tail: 'Order/GetAllOrders',
     })
     expect(pathParts('/menu')).toEqual({ head: '', tail: '/menu' })
   })

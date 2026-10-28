@@ -107,7 +107,7 @@ export function PathField({ form, onChange, pendingQuery, onPendingQueryChange }
           type="text"
           autoComplete="off"
           spellCheck={false}
-          placeholder="/Automation/GetAllAutomations"
+          placeholder="/Order/GetAllOrders"
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={showMenu}

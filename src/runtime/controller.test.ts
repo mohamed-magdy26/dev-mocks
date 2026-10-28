@@ -36,37 +36,37 @@ describe('errorController.getConfigForRequest', () => {
     expect(errorController.getConfigForRequest(request('https://api.test/api/orders-archive'))).toBeUndefined()
   })
 
-  const automations =
-    'https://api.example.com/external/automated/api/v1.0/Automation/GetAllAutomations?Page=1&ItemsPerPage=10'
+  const orders =
+    'https://api.example.com/external/shop/api/v1.0/Order/GetAllOrders?Page=1&ItemsPerPage=10'
 
   it('matches the end of the path, with or without a leading slash', () => {
-    errorController.addConfig({ scenario: 'slow', endpoints: ['automated/api/v1.0/Automation/GetAllAutomations'] })
-    expect(errorController.getConfigForRequest(request(automations))?.scenario).toBe('slow')
+    errorController.addConfig({ scenario: 'slow', endpoints: ['shop/api/v1.0/Order/GetAllOrders'] })
+    expect(errorController.getConfigForRequest(request(orders))?.scenario).toBe('slow')
     errorController.clearAll()
-    errorController.addConfig({ scenario: 'slow', endpoints: ['/Automation/GetAllAutomations'] })
-    expect(errorController.getConfigForRequest(request(automations))?.scenario).toBe('slow')
+    errorController.addConfig({ scenario: 'slow', endpoints: ['/Order/GetAllOrders'] })
+    expect(errorController.getConfigForRequest(request(orders))?.scenario).toBe('slow')
   })
 
   it('matches whole path segments only', () => {
-    errorController.addConfig({ scenario: '500', endpoints: ['/GetAll', '/Automation', 'Automations'] })
-    expect(errorController.getConfigForRequest(request(automations))).toBeUndefined()
+    errorController.addConfig({ scenario: '500', endpoints: ['/GetAll', '/Order', 'Orders'] })
+    expect(errorController.getConfigForRequest(request(orders))).toBeUndefined()
   })
 
   it('takes the path from a pasted full URL and ignores its query', () => {
-    errorController.addConfig({ scenario: '404', endpoints: [automations] })
-    expect(errorController.getConfigForRequest(request(automations.replace('Page=1', 'Page=2')))?.scenario).toBe('404')
+    errorController.addConfig({ scenario: '404', endpoints: [orders] })
+    expect(errorController.getConfigForRequest(request(orders.replace('Page=1', 'Page=2')))?.scenario).toBe('404')
   })
 
   it('matches a wildcard segment anywhere in the path', () => {
-    errorController.addConfig({ scenario: '403', endpoints: ['/Automation/*'] })
-    expect(errorController.getConfigForRequest(request(automations))?.scenario).toBe('403')
-    expect(errorController.getConfigForRequest(request('https://api.test/external/Automations/1'))).toBeUndefined()
+    errorController.addConfig({ scenario: '403', endpoints: ['/Order/*'] })
+    expect(errorController.getConfigForRequest(request(orders))?.scenario).toBe('403')
+    expect(errorController.getConfigForRequest(request('https://api.test/external/Orders/1'))).toBeUndefined()
   })
 
   it('compares the pasted query when matchFullUrl is true', () => {
-    errorController.addConfig({ scenario: '401', endpoints: [automations], matchFullUrl: true })
-    expect(errorController.getConfigForRequest(request(automations))?.scenario).toBe('401')
-    expect(errorController.getConfigForRequest(request(automations.replace('Page=1', 'Page=2')))).toBeUndefined()
+    errorController.addConfig({ scenario: '401', endpoints: [orders], matchFullUrl: true })
+    expect(errorController.getConfigForRequest(request(orders))?.scenario).toBe('401')
+    expect(errorController.getConfigForRequest(request(orders.replace('Page=1', 'Page=2')))).toBeUndefined()
   })
 
   it('lets the rule added last win when two rules match', () => {
@@ -161,7 +161,7 @@ describe('splitEndpoints', () => {
   it('splits at commas between endpoints', () => {
     expect(splitEndpoints('/api/users, /api/posts/*')).toEqual(['/api/users', '/api/posts/*'])
     expect(splitEndpoints('/a,/b')).toEqual(['/a', '/b'])
-    expect(splitEndpoints('Automation/GetAll,Campaign/List')).toEqual(['Automation/GetAll', 'Campaign/List'])
+    expect(splitEndpoints('Order/GetAll,Campaign/List')).toEqual(['Order/GetAll', 'Campaign/List'])
   })
 
   it('keeps a comma inside a pasted query', () => {
