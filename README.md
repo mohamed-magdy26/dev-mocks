@@ -24,19 +24,19 @@ The package works only on the dev server. A production build contains none of it
 
 ## Install
 
-Run both commands in a terminal at the root of your repo. The first command needs the file
-`dsquares-dev-mocks-0.2.0.tgz`. In this example, the file sits in the folder next to your repo folder.
+Run both commands in a terminal at the root of your repo. The first command downloads the built package
+from the `v0.2.0` release of [mohamed-magdy26/dev-mocks](https://github.com/mohamed-magdy26/dev-mocks)
+and needs no GitHub login. The second command connects the package to your app. Without it, the ⚙️ button
+never appears.
 
 ```
-npm install -D ../dsquares-dev-mocks-0.2.0.tgz
+npm install -D https://github.com/mohamed-magdy26/dev-mocks/releases/download/v0.2.0/dsquares-dev-mocks-0.2.0.tgz
 npx dev-mocks init
 ```
 
-> [!WARNING]
-> Do not commit these changes while the package comes from a `.tgz` file. The first command writes
-> `"@dsquares/dev-mocks": "file:../dsquares-dev-mocks-0.2.0.tgz"` into `package.json`. That path points
-> to a file on your own disk, so `npm ci` fails on CI and on every other laptop. When the package moves
-> to a git URL, you install from that URL instead, and you can commit as usual.
+The first command writes that URL into `package.json`, so `npm ci` works on CI and on every other laptop,
+and you can commit the change. To move to a newer version, run the same command with the new version in
+both places of the URL.
 
 ## What `npx dev-mocks init` does
 
@@ -422,3 +422,7 @@ npm pack
 puts that CSS inside its shadow root (a separate DOM tree that your app's CSS cannot reach). The build
 turns every `rem` into `px`, so the panel keeps its size even when your app changes the `<html>` font size. Raise `"version"` in `package.json` before you share a changed build, so
 teammates can tell the two files apart.
+
+To publish a version, push a tag such as `v0.2.1` from this repo. Then, on the repo's "Releases" page
+on github.com, create a release from that tag and upload the `.tgz` file that `npm pack` wrote. The
+install URL in the "Install" section works as soon as the file is uploaded.
