@@ -22,17 +22,33 @@ The package works only on the dev server. A production build contains none of it
   an older msw 2, for example 2.3 for tests, run `npm install -D "msw@^2.8.0"` first, because the panel
   uses `isCommonAssetRequest`, a function that msw added in 2.8.0.
 
-## Install
+## Quick start
 
-Run both commands in a terminal at the root of your repo. The first command downloads the built package
-from the `v0.2.0` release of [mohamed-magdy26/dev-mocks](https://github.com/mohamed-magdy26/dev-mocks)
-and needs no GitHub login. The second command connects the package to your app. Without it, the ⚙️ button
-never appears.
+In a terminal at the root of your repo, run:
 
 ```
 npm install -D https://github.com/mohamed-magdy26/dev-mocks/releases/download/v0.2.0/dsquares-dev-mocks-0.2.0.tgz
 npx dev-mocks init
+npm run dev
 ```
+
+If your app starts with `npm start`, run that instead of `npm run dev`. Then try it in the browser:
+
+1. Open your app. A ⚙️ button appears at the bottom right of the page.
+2. Click ⚙️, open the "Requests" tab, and click any API request.
+3. Click the "500 error" card, then click "Save & reload".
+
+After the reload, that request answers with status 500, and your app shows its error state.
+
+- No ⚙️ button? See [Troubleshooting](#troubleshooting).
+- To remove the package, see [Remove the setup](#remove-the-setup).
+
+## Install
+
+The first command above downloads the built package from the `v0.2.0` release of
+[mohamed-magdy26/dev-mocks](https://github.com/mohamed-magdy26/dev-mocks), and it needs no GitHub login.
+The second command, `npx dev-mocks init`, connects the package to your app. Without it, the ⚙️ button
+never appears.
 
 The first command writes that URL into `package.json`, so `npm ci` works on CI and on every other laptop,
 and you can commit the change. To move to a newer version, run the same command with the new version in
@@ -40,7 +56,7 @@ both places of the URL.
 
 ## What `npx dev-mocks init` does
 
-This walk uses the real run in `waitery-payment-frontend`, a Vite 4 repo. The terminal shows these
+This walk uses a real run in a Vite 4 repo. The terminal shows these
 lines. npm and MSW print their own lines between the `$` lines, and they are left out here.
 
 ```
@@ -65,7 +81,7 @@ Done. Start your dev server. A ⚙️ button appears at the bottom right of the 
 These files change in the repo:
 
 ```
-waitery-payment-frontend/
+my-app/
 ├── package.json             ← "msw" and "@dsquares/dev-mocks" in devDependencies, and the new "msw" field
 ├── package-lock.json        ← updated by npm
 ├── public/
@@ -113,7 +129,7 @@ The app renders only after `startDevMocks()` finishes. On the dev server, `start
 when MSW is ready, so the app's first requests already go through your rules. When MSW fails to start,
 `startDevMocks()` logs an error and still finishes, so the app still renders, without mocks.
 
-A second real run in `communication-frontend`, an Rsbuild repo, shows a different path. There,
+A second real run, in an Rsbuild repo, shows a different path. There,
 `src/index.tsx` contains only `import "./bootstrap"`. `init` follows that import and wraps the
 `root.render(...)` call on line 9 of `src/bootstrap.tsx`.
 
@@ -141,7 +157,7 @@ prints `✔ src/main.tsx already calls startDevMocks()` and does not edit the fi
 
 ## Use the ⚙️ panel
 
-This walk is the real trial in `waitery-payment-frontend` on the Vite dev server. It makes the menu
+This walk is a real trial in a Vite repo, on its dev server. It makes the menu
 request answer 3 seconds late, with the real server's answer.
 
 1. In a terminal at the repo root, start your dev server, for example with `npm run dev`.
@@ -252,7 +268,7 @@ A rule compares the end of the request's path, in whole segments. A segment is t
 The rule ignores the domain and the query. The `/` at the start of the rule is optional. You can also
 paste a full URL from the DevTools Network tab, and the rule keeps only the path of that URL.
 
-This table uses one request from `automation-frontend`, with its host replaced by the invented `api.example.com`:
+This table uses one real request, with its host replaced by the invented `api.example.com`:
 `https://api.example.com/external/automated/api/v1.0/Automation/GetAllAutomations?Page=1`.
 Its path is `/external/automated/api/v1.0/Automation/GetAllAutomations`.
 
@@ -304,7 +320,7 @@ Without it, MSW looks for `/mockServiceWorker.js` and gets a 404. Then the conso
 
 In a production build, the bundler sets `process.env.NODE_ENV` to `"production"`. Then `startDevMocks()`
 returns a promise that is already finished, and the bundler removes MSW and the panel from the output.
-In the Vite build of `waitery-payment-frontend`, a search of the output's `.js` files for `setupWorker`
+In a real Vite build, a search of the output's `.js` files for `setupWorker`
 and `dev-mocks:rules` found 0 matches.
 
 Two things still apply to production builds:
