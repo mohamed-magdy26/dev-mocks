@@ -1,0 +1,91 @@
+@tailwind base;
+
+:host {
+  all: initial;
+  --dm-bg: #0f1115;
+  --dm-raised: #171a20;
+  --dm-sunken: #0a0c0f;
+  --dm-hover: #1e222a;
+  --dm-border: #262b34;
+  --dm-border-strong: #363d49;
+  --dm-control: #5f6775;
+  --dm-hairline: rgb(255 255 255 / 0.03);
+  --dm-text: #e8eaef;
+  --dm-dim: #a3aab6;
+  --dm-faint: #878f9c;
+  --dm-accent: #c5f15c;
+  --dm-accent-ink: #141a06;
+  --dm-accent-soft: rgb(197 241 92 / 0.12);
+  --dm-accent-line: rgb(197 241 92 / 0.3);
+  --dm-red: #ff6b6b;
+  --dm-red-soft: rgb(255 107 107 / 0.14);
+  --dm-amber: #ffb547;
+  --dm-amber-soft: rgb(255 181 71 / 0.14);
+  --dm-blue: #6cb2ff;
+  --dm-blue-soft: rgb(108 178 255 / 0.14);
+  --dm-blue-line: rgb(108 178 255 / 0.25);
+  --dm-grey: #8d95a3;
+  --dm-grey-soft: rgb(141 149 163 / 0.14);
+  --dm-shade: rgb(0 0 0 / 0.14);
+  --dm-toast: #1f242d;
+  font-family: "Instrument Sans", ui-sans-serif, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dm-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+@tailwind components;
+@tailwind utilities;
+
+.tone-red { --tone: var(--dm-red); --tone-soft: var(--dm-red-soft); }
+.tone-amber { --tone: var(--dm-amber); --tone-soft: var(--dm-amber-soft); }
+.tone-blue { --tone: var(--dm-blue); --tone-soft: var(--dm-blue-soft); }
+.tone-grey { --tone: var(--dm-grey); --tone-soft: var(--dm-grey-soft); }
+.tone-lime { --tone: var(--dm-accent); --tone-soft: var(--dm-accent-soft); }
+
+.dm-head {
+  background: radial-gradient(120% 160% at 0% 0%, rgb(197 241 92 / 0.08), transparent 55%), var(--dm-bg);
+}
+.dm-head::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.dm-scroll { scrollbar-width: thin; scrollbar-color: var(--dm-border-strong) transparent; }
+summary::-webkit-details-marker { display: none; }
+input[type="search"]::-webkit-search-cancel-button { filter: invert(0.6); }
+mark { padding: 0 1px; border-radius: 2px; background: rgb(197 241 92 / 0.25); color: var(--dm-text); }
+
+.dm-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 2px 5px;
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+  border-radius: 4px;
+  color: var(--tone);
+  font: 600 9.5px/1 "Instrument Sans", ui-sans-serif, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.dm-switch { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.dm-switch-track { position: relative; width: 30px; height: 18px; flex-shrink: 0; border-radius: 999px; background: var(--dm-control); transition: background 0.2s; }
+.dm-switch-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--dm-text); transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.dm-switch:checked + .dm-switch-track { background: var(--dm-accent); }
+.dm-switch:checked + .dm-switch-track::after { transform: translateX(12px); background: var(--dm-accent-ink); }
+.dm-switch:focus-visible + .dm-switch-track { outline: 2px solid var(--dm-accent); outline-offset: 2px; }
+
+.dm-check { display: grid; place-items: center; width: 15px; height: 15px; margin: 0; border: 1px solid var(--dm-control); border-radius: 4px; background: var(--dm-sunken); appearance: none; cursor: pointer; }
+.dm-check:checked { border-color: var(--dm-accent); background: var(--dm-accent); }
+.dm-check:checked::after { content: ""; width: 8px; height: 4px; border: 2px solid var(--dm-accent-ink); border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
+.dm-check:focus-visible { outline: 2px solid var(--dm-accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
