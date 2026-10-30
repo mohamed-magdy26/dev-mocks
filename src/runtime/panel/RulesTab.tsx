@@ -18,12 +18,18 @@ interface RulesTabProps extends FormProps {
   pendingQuery: string
   onPendingQueryChange: (query: string) => void
   focusPresets: boolean
+  paused: boolean
 }
 
 export function RulesTab(props: RulesTabProps) {
   const { form, onChange, rules, editing } = props
   return (
     <div role="tabpanel" id="dm-panel-rules" aria-labelledby="dm-tab-rules" className="flex flex-col gap-5 px-4 pb-5 pt-3.5">
+      {props.paused && (
+        <p className="m-0 rounded-field border border-blue-line bg-blue-soft px-3 py-2 text-body">
+          Rules are paused. Every request goes to the real server until you turn the “Mock rules” switch in the header back on.
+        </p>
+      )}
       {editing !== null && (
         <div className="flex items-center justify-between gap-2.5 rounded-field border border-accent-line bg-accent-soft py-2 pl-3 pr-2.5 text-body">
           <span className="min-w-0">

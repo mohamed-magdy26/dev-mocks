@@ -1,9 +1,12 @@
 import { setupWorker } from 'msw/browser'
+import type { StartDevMocksOptions } from '../index.js'
 import { handlers, isAppAsset } from './handlers.js'
 import { mountPanel } from './panel/mount.js'
+import { toShortcut } from './panel/settings.js'
 import { requestLog } from './requests.js'
 
-export async function start(serviceWorkerUrl = '/mockServiceWorker.js'): Promise<void> {
+export async function start({ serviceWorkerUrl = '/mockServiceWorker.js', shortcut }: StartDevMocksOptions): Promise<void> {
+  const keys = toShortcut(shortcut)
   requestLog.load()
   addEventListener('pagehide', requestLog.flush)
   const worker = setupWorker(...handlers)
@@ -17,5 +20,5 @@ export async function start(serviceWorkerUrl = '/mockServiceWorker.js'): Promise
   worker.events.on('response:mocked', onResponse)
   worker.events.on('response:bypass', onResponse)
   await worker.start({ onUnhandledRequest: 'bypass', serviceWorker: { url: serviceWorkerUrl } })
-  mountPanel()
+  mountPanel(keys)
 }

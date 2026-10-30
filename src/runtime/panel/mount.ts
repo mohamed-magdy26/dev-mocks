@@ -1,6 +1,8 @@
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
+import { errorController } from '../controller.js'
 import DevMocksPanel from './DevMocksPanel.js'
+import { hiddenNotice, HIDDEN_KEY, ON_FLAG, readSetting, type Shortcut } from './settings.js'
 import { css } from './styles.generated.js'
 
 const HOST_ID = 'dev-mocks-host'
@@ -8,8 +10,18 @@ const FONTS_ID = 'dev-mocks-fonts'
 const FONTS_URL =
   'https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap'
 
-export function mountPanel(): void {
+export function mountPanel(shortcut: Shortcut): void {
   if (document.getElementById(HOST_ID)) return
+
+  const notice = hiddenNotice(
+    {
+      hidden: readSetting(HIDDEN_KEY) === ON_FLAG,
+      paused: errorController.isPaused(),
+      count: errorController.getAllConfigs().length,
+    },
+    shortcut,
+  )
+  if (notice) console.info(notice)
 
   // A font declared inside a shadow root never loads, so the font stylesheet goes into the page's <head>.
   if (!document.getElementById(FONTS_ID)) {
@@ -30,5 +42,5 @@ export function mountPanel(): void {
   style.textContent = css
   const container = document.createElement('div')
   shadow.append(style, container)
-  createRoot(container).render(createElement(DevMocksPanel))
+  createRoot(container).render(createElement(DevMocksPanel, { shortcut }))
 }

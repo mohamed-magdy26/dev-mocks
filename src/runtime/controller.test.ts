@@ -7,6 +7,7 @@ describe('errorController.getConfigForRequest', () => {
   beforeEach(() => {
     vi.stubGlobal('localStorage', { setItem: vi.fn(), getItem: vi.fn(() => null) })
     errorController.clearAll()
+    errorController.setPaused(false)
   })
 
   it('matches an exact path and ignores the query string', () => {
@@ -154,6 +155,46 @@ describe('errorController.getConfigForRequest', () => {
     expect(errorController.addConfig({ scenario: '404', endpoints: ['/api/cart'] }, ['/api/menu'])).toBe(true)
     expect(errorController.getAllConfigs().map((c) => c.scenario)).toEqual(['401', '404'])
     expect(setItem).toHaveBeenCalledTimes(1)
+  })
+
+  it('matches no rule while paused, keeps the rules, and matches again after resume', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/menu'] })
+    expect(errorController.setPaused(true)).toBe(true)
+    expect(errorController.getConfigForRequest(request('https://api.test/api/menu'))).toBeUndefined()
+    expect(errorController.getAllConfigs()).toHaveLength(1)
+    errorController.setPaused(false)
+    expect(errorController.getConfigForRequest(request('https://api.test/api/menu'))?.scenario).toBe('500')
+  })
+
+  it('reads the paused flag another tab saved, and stores the new flag', () => {
+    const setItem = vi.fn()
+    const getItem = vi.fn((key: string) => (key === 'dev-mocks:paused' ? '1' : null))
+    vi.stubGlobal('localStorage', { setItem, getItem })
+    errorController.loadFromLocalStorage()
+    expect(errorController.isPaused()).toBe(true)
+    errorController.setPaused(false)
+    expect(setItem).toHaveBeenCalledWith('dev-mocks:paused', '')
+    expect(errorController.isPaused()).toBe(false)
+  })
+
+  it('reports a refused pause and keeps the rules working', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/menu'] })
+    const full = () => {
+      throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+    }
+    vi.stubGlobal('localStorage', { setItem: full, getItem: vi.fn(() => null) })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(errorController.setPaused(true)).toBe(false)
+    expect(errorController.isPaused()).toBe(false)
+    expect(errorController.getConfigForRequest(request('https://api.test/api/menu'))?.scenario).toBe('500')
+    warn.mockRestore()
+  })
+
+  it('ends the pause when every rule is removed', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/menu'] })
+    errorController.setPaused(true)
+    expect(errorController.clearAll()).toBe(true)
+    expect(errorController.isPaused()).toBe(false)
   })
 })
 

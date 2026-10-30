@@ -75,3 +75,23 @@ export const ChevronIcon = (props: IconProps) => (
     <path d="m6 9 6 6 6-6" />
   </Icon>
 )
+
+export const EyeOffIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M10.7 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.4 3.4" />
+    <path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    <path d="m2 2 20 20" />
+  </Icon>
+)
+
+export const MoveIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m5 9-3 3 3 3" />
+    <path d="m9 5 3-3 3 3" />
+    <path d="m15 19-3 3-3-3" />
+    <path d="m19 9 3 3-3 3" />
+    <path d="M2 12h20" />
+    <path d="M12 2v20" />
+  </Icon>
+)

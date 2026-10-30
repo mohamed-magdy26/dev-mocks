@@ -64,6 +64,7 @@ export default {
       minWidth: { badge: '54px' },
       maxWidth: { toast: 'calc(100% - 28px)' },
       inset: { pop: '76px', 'pop-narrow': '72px', toast: '74px' },
+      translate: { 'drag-x': 'var(--dm-drag-x)', 'drag-y': 'var(--dm-drag-y)' },
       zIndex: { top: '2147483000' },
       letterSpacing: { label: '0.06em' },
       flexShrink: { lots: '1000' },
@@ -78,8 +79,11 @@ export default {
         live: '0 0 0 3px var(--dm-accent-soft)',
         'ring-tone': 'inset 0 0 0 1px var(--tone)',
         'ring-accent': 'inset 0 0 0 1px var(--dm-accent)',
+        'focus-halo': '0 0 0 6px var(--dm-bg)',
       },
       transitionTimingFunction: { dm: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+      // No transform: animating it would slide a dropped button in from where the drag offset pointed.
+      transitionProperty: { fab: 'opacity, border-color' },
       keyframes: {
         'pop-in': { from: { opacity: '0', transform: 'translateY(10px) scale(0.97)' } },
         flash: {

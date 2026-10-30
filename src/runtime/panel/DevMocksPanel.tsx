@@ -19,7 +19,6 @@ import {
   EMPTY_FORM,
   findProblem,
   formToRule,
-  plural,
   REFUSED_CHANGE_TEXT,
   refusedSaveText,
   requestToForm,
@@ -28,10 +27,27 @@ import {
   type FlashField,
   type FormState,
 } from './form.js'
-import { CloseIcon, GearIcon, PulseIcon } from './icons.js'
+import { CloseIcon, EyeOffIcon, MoveIcon, PulseIcon } from './icons.js'
+import { Launcher } from './Launcher.js'
 import { RequestsTab } from './RequestsTab.js'
 import { RulesTab } from './RulesTab.js'
 import { readSession, takeSession, writeSession } from './session.js'
+import {
+  CORNER_KEY,
+  HIDDEN_KEY,
+  matchesShortcut,
+  NEXT_CORNER,
+  OFF_FLAG,
+  ON_FLAG,
+  POP_CORNER,
+  readCorner,
+  readSetting,
+  ruleStatus,
+  showsDot,
+  writeSetting,
+  type Corner,
+  type Shortcut,
+} from './settings.js'
 
 type Tab = 'rules' | 'requests'
 const TABS: Tab[] = ['rules', 'requests']
@@ -43,6 +59,9 @@ const TOAST_MS = 4500
 const NOT_FOUND = -1
 const OPEN_FLAG = '1'
 const CLOSED_FLAG = ''
+const FOCUS_SWITCH = 'switch'
+// Read once per page load: the switch reloads the page, and keyboard focus returns to it afterwards.
+const focusSwitchOnLoad = takeSession('focus') === FOCUS_SWITCH
 
 /** A file dropped just outside the JSON box would otherwise make the browser leave the app and open the file. */
 function preventFileDrop(event: DragEvent<HTMLElement>) {
@@ -65,10 +84,16 @@ interface Note {
   warn: boolean
 }
 
-export default function DevMocksPanel() {
-  const [open, setOpen] = useState(() => readSession('open') === OPEN_FLAG)
+export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
+  const [hidden, setHidden] = useState(() => readSetting(HIDDEN_KEY) === ON_FLAG)
+  const [corner, setCorner] = useState<Corner>(readCorner)
+  const [focusLauncher, setFocusLauncher] = useState(false)
+  const [focusSwitch, setFocusSwitch] = useState(focusSwitchOnLoad)
+  const [announcement, setAnnouncement] = useState('')
+  const [open, setOpen] = useState(() => !hidden && readSession('open') === OPEN_FLAG)
   const [tab, setTab] = useState<Tab>(() => (readSession('tab') === 'requests' ? 'requests' : 'rules'))
   const [rules] = useState<MockConfig[]>(() => errorController.getAllConfigs())
+  const [paused] = useState(() => errorController.isPaused())
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [editing, setEditing] = useState<number | null>(null)
   const [pendingQuery, setPendingQuery] = useState('')
@@ -86,6 +111,8 @@ export default function DevMocksPanel() {
   // A note lasts only until the next edit, so it is shown before the problem, which the fields also show.
   const footer = note ?? problem
   const count = rules.length
+  let status = 'No active rules'
+  if (count > 0) status = ruleStatus(count, paused)
 
   useEffect(() => {
     if (!toast || toastHeld) return
@@ -95,8 +122,50 @@ export default function DevMocksPanel() {
 
   function close() {
     setOpen(false)
+    setFocusSwitch(false)
     writeSession('open', CLOSED_FLAG)
     fabRef.current?.focus()
+  }
+
+  const changeHidden = useCallback((next: boolean) => {
+    setHidden(next)
+    setAnnouncement('')
+    writeSetting(HIDDEN_KEY, next ? ON_FLAG : OFF_FLAG)
+    if (!next) return
+    setOpen(false)
+    setFocusSwitch(false)
+    writeSession('open', CLOSED_FLAG)
+  }, [])
+
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.repeat || !matchesShortcut(event, shortcut)) return
+      event.preventDefault()
+      setFocusLauncher(false)
+      changeHidden(!hidden)
+    }
+    // Capture phase: a host editor that stops the key event would otherwise swallow the shortcut.
+    addEventListener('keydown', onKey, true)
+    return () => removeEventListener('keydown', onKey, true)
+  }, [hidden, shortcut, changeHidden])
+
+  function showButton() {
+    setFocusLauncher(true)
+    changeHidden(false)
+  }
+
+  function hideButton() {
+    changeHidden(true)
+    if (showsDot({ count })) {
+      setFocusLauncher(true)
+      return
+    }
+    setAnnouncement(`Dev mocks button hidden. Press ${shortcut.label} to show it.`)
+  }
+
+  function moveTo(next: Corner) {
+    setCorner(next)
+    writeSetting(CORNER_KEY, next)
   }
 
   const endFlash = useCallback((field: FlashField) => {
@@ -176,6 +245,15 @@ export default function DevMocksPanel() {
     reloadWith('All rules removed. The page reloaded.')
   }
 
+  function togglePaused() {
+    if (!errorController.setPaused(!paused)) {
+      setToast({ text: REFUSED_CHANGE_TEXT })
+      return
+    }
+    writeSession('focus', FOCUS_SWITCH)
+    reloadWith(paused ? 'Rules resumed. The page reloaded.' : 'All rules paused. The page reloaded.')
+  }
+
   function pickRequest(request: LoggedRequest) {
     changeTab('rules')
     setFocusPresets(true)
@@ -217,28 +295,19 @@ export default function DevMocksPanel() {
 
   return (
     <div className="font-ui text-base text-ink">
-      <button
-        ref={fabRef}
-        type="button"
-        aria-expanded={open}
-        aria-controls="dm-pop"
-        aria-label={`Dev mocks panel, ${plural(count, 'rule')} active`}
-        onClick={toggle}
-        className={clsx(
-          FOCUS,
-          'group fixed bottom-5 right-5 z-top flex h-11 items-center gap-2 rounded-full border border-line-strong bg-panel pl-3.5 pr-3 text-ink shadow-pop transition duration-200 ease-dm hover:-translate-y-px hover:border-faint narrow:bottom-4 narrow:right-4',
-        )}
-      >
-        <GearIcon className="h-5 w-5 transition-transform duration-500 ease-dm group-aria-expanded:rotate-90" />
-        <span
-          className={clsx('grid h-5 min-w-5 place-items-center rounded-full px-1.5 font-mono text-xs font-bold leading-none', {
-            'bg-accent text-accent-ink': count > 0,
-            'bg-hover text-dim': count === 0,
-          })}
-        >
-          {count}
-        </span>
-      </button>
+      <Launcher
+        buttonRef={fabRef}
+        open={open}
+        hidden={hidden}
+        count={count}
+        paused={paused}
+        corner={corner}
+        shortcutLabel={shortcut.label}
+        autoFocus={focusLauncher}
+        onToggle={toggle}
+        onShow={showButton}
+        onCornerChange={moveTo}
+      />
 
       {open && (
         <section
@@ -248,7 +317,10 @@ export default function DevMocksPanel() {
           onKeyDown={onPopoverKeyDown}
           onDragOver={preventFileDrop}
           onDrop={preventFileDrop}
-          className="fixed bottom-pop right-5 z-top flex h-pop w-pop origin-bottom-right animate-pop-in flex-col overflow-hidden rounded-pop border border-line bg-panel shadow-pop narrow:bottom-pop-narrow narrow:left-4 narrow:right-4 narrow:h-pop-narrow narrow:w-auto"
+          className={clsx(
+            POP_CORNER[corner],
+            'fixed z-top flex h-pop w-pop animate-pop-in flex-col overflow-hidden rounded-pop border border-line bg-panel shadow-pop narrow:left-4 narrow:right-4 narrow:h-pop-narrow narrow:w-auto',
+          )}
         >
           <header className="dm-head relative flex items-center justify-between gap-3 py-3.5 pl-4 pr-3">
             <div className="relative flex items-center gap-2.5">
@@ -260,14 +332,64 @@ export default function DevMocksPanel() {
                   Dev Mocks
                 </h2>
                 <p className="m-0 mt-px flex items-center gap-1.5 text-note text-dim">
-                  <span className={clsx('h-1.5 w-1.5 rounded-full', { 'bg-accent shadow-live': count > 0, 'bg-faint': count === 0 })} />
-                  {count > 0 ? `${plural(count, 'rule')} active` : 'No active rules'}
+                  <span
+                    className={clsx('h-1.5 w-1.5 rounded-full', {
+                      'bg-accent shadow-live': count > 0 && !paused,
+                      'bg-amber': count > 0 && paused,
+                      'bg-faint': count === 0,
+                    })}
+                  />
+                  {status}
                 </p>
               </div>
             </div>
-            <button type="button" aria-label="Close dev mocks panel" onClick={close} className={clsx(ICON_BTN, FOCUS, 'relative hover:text-ink')}>
-              <CloseIcon className="h-4 w-4" />
-            </button>
+            <div className="relative flex items-center gap-1">
+              {(count > 0 || paused) && (
+                <>
+                  <label
+                    title="Changing this reloads the page"
+                    className="relative mr-1.5 inline-flex cursor-pointer select-none items-center gap-2 text-note font-semibold text-dim"
+                  >
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      className="dm-switch"
+                      aria-describedby="dm-switch-note"
+                      autoFocus={focusSwitch}
+                      checked={!paused}
+                      onChange={togglePaused}
+                    />
+                    <span aria-hidden="true" className="dm-switch-track" />
+                    Mock rules
+                  </label>
+                  <span id="dm-switch-note" className="sr-only">
+                    Changing this reloads the page.
+                  </span>
+                </>
+              )}
+              <button
+                type="button"
+                aria-label={`Move the dev mocks button to the ${NEXT_CORNER[corner].replace('-', ' ')} corner`}
+                title="Move ⚙️ to the next corner"
+                onClick={() => moveTo(NEXT_CORNER[corner])}
+                className={clsx(ICON_BTN, FOCUS, 'hover:text-ink')}
+              >
+                <MoveIcon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                aria-label={`Hide the dev mocks button. Press ${shortcut.label} to show it again.`}
+                aria-keyshortcuts={shortcut.label}
+                title={`Hide ⚙️ · ${shortcut.label} shows it again`}
+                onClick={hideButton}
+                className={clsx(ICON_BTN, FOCUS, 'hover:text-ink')}
+              >
+                <EyeOffIcon className="h-4 w-4" />
+              </button>
+              <button type="button" aria-label="Close dev mocks panel" onClick={close} className={clsx(ICON_BTN, FOCUS, 'hover:text-ink')}>
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
           </header>
 
           <div role="tablist" aria-label="Dev mocks sections" onKeyDown={onTabsKeyDown} className="flex gap-1 border-b border-line px-2.5">
@@ -318,6 +440,7 @@ export default function DevMocksPanel() {
                   pendingQuery={pendingQuery}
                   onPendingQueryChange={setPendingQuery}
                   focusPresets={focusPresets}
+                  paused={paused}
                 />
               </FlashContext.Provider>
             ) : (
@@ -376,6 +499,10 @@ export default function DevMocksPanel() {
           </div>
         </section>
       )}
+
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
     </div>
   )
 }

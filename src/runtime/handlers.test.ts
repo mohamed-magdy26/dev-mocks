@@ -9,6 +9,7 @@ describe('handlers', () => {
   beforeEach(() => {
     vi.stubGlobal('localStorage', { setItem: vi.fn(), getItem: vi.fn(() => null) })
     errorController.clearAll()
+    errorController.setPaused(false)
   })
 
   it('answers a matching request with the default 500 body', async () => {
@@ -122,5 +123,11 @@ describe('handlers', () => {
     const ping = new Request('http://localhost:5173/', { mode: 'no-cors', headers: { Accept: 'text/x-vite-ping' } })
     expect(await getResponse(handlers, ping)).toBeUndefined()
     expect((await getResponse(handlers, request('http://localhost:5173/')))?.status).toBe(500)
+  })
+
+  it('sends every request to the real server while the rules are paused', async () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/menu'] })
+    errorController.setPaused(true)
+    expect(await getResponse(handlers, request('https://api.test/api/menu'))).toBeUndefined()
   })
 })

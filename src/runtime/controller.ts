@@ -1,6 +1,8 @@
 import type { JsonBodyType } from 'msw'
 
 const STORAGE_KEY = 'dev-mocks:rules'
+const PAUSED_KEY = 'dev-mocks:paused'
+const PAUSED_FLAG = '1'
 
 export type ErrorScenario = 'none' | '500' | '404' | '401' | '403' | 'network' | 'timeout' | 'slow' | 'custom'
 
@@ -65,6 +67,7 @@ export const MEGABYTE = 1_000_000
 
 class ErrorMockController {
   private configs: MockConfig[] = []
+  private paused = false
 
   /**
    * Another tab may have saved rules since this page loaded, so every change starts from the stored list.
@@ -87,13 +90,17 @@ class ErrorMockController {
     return this.saveToLocalStorage()
   }
 
+  /** Also ends a pause: with no rules left, a saved pause would silently pause the next rule the user adds. */
   clearAll(): boolean {
     this.configs = []
-    return this.saveToLocalStorage()
+    const saved = this.saveToLocalStorage()
+    if (saved && this.paused) this.setPaused(false)
+    return saved
   }
 
-  /** When several rules match, the rule added last wins, so a rule the user just saved always takes effect. */
+  /** When several rules match, the rule added last wins, so a rule the user just saved always takes effect. While paused, no rule matches. */
   getConfigForRequest(request: Request): MockConfig | undefined {
+    if (this.paused) return undefined
     const url = new URL(request.url)
     return [...this.configs].reverse().find((config) =>
       config.endpoints.some((endpoint) => {
@@ -107,6 +114,22 @@ class ErrorMockController {
 
   getAllConfigs(): MockConfig[] {
     return [...this.configs]
+  }
+
+  isPaused(): boolean {
+    return this.paused
+  }
+
+  /** Keeps every rule, but while paused every request goes to the real server. Returns false when the browser refused to store the flag. */
+  setPaused(paused: boolean): boolean {
+    try {
+      localStorage.setItem(PAUSED_KEY, paused ? PAUSED_FLAG : '')
+      this.paused = paused
+      return true
+    } catch (e) {
+      console.warn('Failed to save the paused flag', e)
+      return false
+    }
   }
 
   private saveToLocalStorage(): boolean {
@@ -124,6 +147,7 @@ class ErrorMockController {
 
   loadFromLocalStorage() {
     try {
+      this.paused = localStorage.getItem(PAUSED_KEY) === PAUSED_FLAG
       const saved = localStorage.getItem(STORAGE_KEY)
       if (saved) {
         const parsed: unknown = JSON.parse(saved)
