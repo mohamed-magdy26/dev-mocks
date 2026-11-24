@@ -89,10 +89,31 @@ mark { padding: 0 1px; border-radius: 2px; background: rgb(197 241 92 / 0.25); c
 .dm-check:checked::after { content: ""; width: 8px; height: 4px; border: 2px solid var(--dm-accent-ink); border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
 .dm-check:focus-visible { outline: 2px solid var(--dm-accent); outline-offset: 2px; }
 
-/* The 6 px tuck uses the separate translate property, so it neither runs layout nor fights the drag's transform. */
-.dm-tuck-left { translate: -6px 0; }
-.dm-tuck-right { translate: 6px 0; }
-.dm-tuck-left:focus-visible, .dm-tuck-right:focus-visible { translate: none; }
+/*
+  The ⚙️ tab and its shrunk bar hug one screen edge and slide along it. --dm-at is how far along that
+  edge they sit, written onto the element whenever the spot changes, and the tab is centred on that
+  point. The clamp keeps half the tab, 30 px, inside each end of the edge, so dragging it to the very
+  corner still leaves all of it on screen. The 6 px tuck and the centring share one translate value,
+  because an element has only one: --dm-tuck is 6px while the mouse is far away and 0 otherwise.
+  translate is the separate property, not transform, so it neither runs layout nor fights the drag.
+*/
+.dm-spot-left, .dm-spot-right, .dm-spot-top, .dm-spot-bottom { --dm-tuck: 0px; }
+.dm-spot-left, .dm-spot-right { top: clamp(30px, var(--dm-at, 50%), calc(100% - 30px)); }
+.dm-spot-top, .dm-spot-bottom { left: clamp(30px, var(--dm-at, 50%), calc(100% - 30px)); }
+.dm-spot-left { left: 0; translate: calc(var(--dm-tuck) * -1) -50%; }
+.dm-spot-right { right: 0; translate: var(--dm-tuck) -50%; }
+.dm-spot-top { top: 0; translate: -50% calc(var(--dm-tuck) * -1); }
+.dm-spot-bottom { bottom: 0; translate: -50% var(--dm-tuck); }
+.dm-tuck-left, .dm-tuck-right, .dm-tuck-up, .dm-tuck-down { --dm-tuck: 6px; }
+.dm-spot-left:focus-visible, .dm-spot-right:focus-visible,
+.dm-spot-top:focus-visible, .dm-spot-bottom:focus-visible { --dm-tuck: 0px; }
+
+/*
+  The panel opens beside the tab, lined up with it. --dm-pop-at is that line in pixels, measured and
+  kept inside the window by the panel itself, because only the panel knows how tall and wide it is.
+*/
+.dm-pop-down { top: var(--dm-pop-at, 72px); }
+.dm-pop-across { left: var(--dm-pop-at, 72px); }
 .dm-sliver-paused { background: linear-gradient(var(--dm-amber) 0 40%, transparent 40% 60%, var(--dm-amber) 60%); }
 
 /* Windows High Contrast replaces every background, which would hide the switch track and the hidden-button bar. */

@@ -2,11 +2,12 @@ import { setupWorker } from 'msw/browser'
 import type { StartDevMocksOptions } from '../index.js'
 import { handlers, isAppAsset } from './handlers.js'
 import { mountPanel } from './panel/mount.js'
-import { toShortcut } from './panel/settings.js'
+import { toShortcuts } from './panel/settings.js'
 import { requestLog } from './requests.js'
 
-export async function start({ serviceWorkerUrl = '/mockServiceWorker.js', shortcut }: StartDevMocksOptions): Promise<void> {
-  const keys = toShortcut(shortcut)
+export async function start(options: StartDevMocksOptions): Promise<void> {
+  const { serviceWorkerUrl = '/mockServiceWorker.js', shortcut, shrinkShortcut } = options
+  const keys = toShortcuts(shortcut, shrinkShortcut)
   requestLog.load()
   addEventListener('pagehide', requestLog.flush)
   const worker = setupWorker(...handlers)

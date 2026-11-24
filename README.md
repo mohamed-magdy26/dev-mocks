@@ -184,21 +184,27 @@ To change a rule, click the pencil next to it under "Active rules", then click "
 a rule, click the bin next to it. To stop every rule, click "Remove all", then click it a second time
 within 3 seconds to confirm. Each of these actions reloads the page.
 
-### Move, hide and pause the ⚙️ tab
+### Move, shrink and pause the ⚙️ tab
 
-The ⚙️ tab can cover part of your app, so the panel lets you move it, hide it and pause its rules.
+The ⚙️ tab can cover part of your app, so the panel lets you move it, shrink it and pause its rules.
 The panel saves each choice in the browser's localStorage, so the choice stays after a reload.
 
 | When you do this | The panel does this |
 |---|---|
-| On the page, drag ⚙️ and let go | The tab jumps to the left or right edge, near the top or the bottom, whichever is nearest to where you let go. The panel then opens beside the tab. The panel saves the place under `dev-mocks:corner`. |
-| In the panel's header, click the four-arrow button | The tab moves to the next place, clockwise: bottom right, bottom left, top left, top right. This does the same as a drag, and it works from the keyboard. |
-| In the panel's header, click the crossed-out eye | The panel closes and the tab disappears. The panel saves `dev-mocks:hidden`. |
-| Anywhere on the page, press Alt+Shift+M | The tab disappears, or comes back when it was hidden. |
+| On the page, drag ⚙️ and let go | The tab sticks to whichever of the four screen edges you let go nearest, at the place along that edge where you let go. On the left and right edges it stands upright and slides up and down; on the top and bottom edges it lies flat and slides left and right. The panel saves the place under `dev-mocks:spot`, as a line such as `right:0.820`. |
+| With ⚙️ in keyboard focus, press an arrow key | The tab slides a twentieth of the screen along its own edge. Up and down work on the left and right edges, left and right on the top and bottom edges. This is the way to move it without a mouse. |
+| In the panel's header, click the four-arrow button | The tab moves to the next edge, clockwise: right, bottom, left, top. It keeps its place along the edge. |
+| In the panel's header, click the arrows folding inwards | The panel closes and the ⚙️ tab shrinks to a thin bar on the edge. The panel saves `dev-mocks:hidden`, which keeps the name the setting had in 0.3.0, so a developer who already shrank the tab keeps that choice after upgrading. |
+| Anywhere on the page, press Alt+Shift+M | The panel opens, or closes when it was open. The ⚙️ tab stays as it is, shrunk or not. |
+| Anywhere on the page, press Alt+Shift+H | The ⚙️ tab shrinks to the bar, or comes back when it was shrunk. |
 | In the panel's header, turn off the "Mock rules" switch | The page reloads. Every request goes to the real server, and the rules stay in the list. Turn the switch on again to use them. The panel saves `dev-mocks:paused`. "Remove all" also turns the switch back on. |
 | Keep the mouse away from ⚙️ | The tab turns 25% transparent, and 6 px of it slides behind the screen edge. It turns solid and slides out when the mouse comes within 96 px of it, when the panel is open, or when the tab has keyboard focus. |
 
-While the tab is hidden, a thin bar stays on the screen edge where the tab was. The bar has a different
+A spot saved by 0.3.0, which had four corners and no edges, is read once as the same side of the
+screen: `bottom-right`, for example, becomes the right edge near the bottom.
+
+While the tab is shrunk, a thin bar stays on the screen edge where the tab was. It stands on end
+against a left or right edge and lies flat against a top or bottom edge. The bar has a different
 shape and colour in each state, so the state is readable without colour:
 
 | State | The bar looks like this |
@@ -207,20 +213,33 @@ shape and colour in each state, so the state is readable without colour:
 | The rules are paused | An amber bar split in two, like a pause sign. |
 | There is no rule | A short grey stub. |
 
-Hover the bar to read "2 rules active · click or press Alt+Shift+M to show the dev mocks tab" (or
-"2 rules paused · …", or "0 rules · …"), and click the bar to bring the tab back.
+**One click on that bar opens the panel**, and a second click closes it again. The ⚙️ tab stays
+shrunk either way, so the app keeps the quiet edge you gave it. To bring the ⚙️ tab itself back,
+press Alt+Shift+H. Hover the bar to read "2 rules active · click to open dev mocks · drag to move ·
+Alt+Shift+H brings the ⚙️ tab back" (or "2 rules paused · …", or "0 rules · …").
 
-In 0.3.1 the default shortcut changed from Alt+Shift+D to Alt+Shift+M, because the Dark Reader browser
-extension uses Alt+Shift+D.
+The bar drags to another edge exactly like the ⚙️ tab, and the arrow keys slide it along its own
+edge, so you never have to bring the tab back just to move it out of the way. Its clickable box is
+small on purpose: 28 px by 10 px, a quarter of the area the old hidden button took, because whatever
+your app draws under that corner has to stay within reach of the mouse.
 
-While the tab is hidden, the DevTools Console tab shows one line on every page load, so you can always
+The panel opens 44 px in from the screen edge, which clears the 36 px ⚙️ tab. While the tab is
+shrunk it opens 20 px in instead, close against the 10 px bar that opened it.
+
+Two things changed in 0.3.1. The default shortcut moved from Alt+Shift+D to Alt+Shift+M, because the
+Dark Reader browser extension uses Alt+Shift+D. Alt+Shift+M then stopped hiding the tab and started
+opening and closing the panel, which is the thing you reach for most, and shrinking the tab moved to
+Alt+Shift+H.
+
+While the tab is shrunk, the DevTools Console tab shows one line on every page load, so you can always
 find the way back:
 
 ```
-[dev-mocks] 2 rules active, panel hidden. Press Alt+Shift+M to show it.
+[dev-mocks] 2 rules active. The ⚙️ tab is shrunk to a bar on the screen edge. Click the bar to open the panel, or press Alt+Shift+H to bring the tab back.
 ```
 
-With no rule, the line reads `[dev-mocks] Panel hidden. Press Alt+Shift+M to show it.`
+With no rule, the line leaves the count out and starts at "The ⚙️ tab is shrunk".
+
 Alt+Shift+M matches the M key by its place on the keyboard, so the shortcut also works while your keyboard
 types Arabic. To pick another shortcut, see [`startDevMocks()` options](#startdevmocks-options).
 
@@ -356,15 +375,24 @@ startDevMocks({ enabled: false }).then(() => { /* render */ })
 // The app runs under a base path, so the dev server serves the worker file at /checkout/mockServiceWorker.js.
 startDevMocks({ serviceWorkerUrl: '/checkout/mockServiceWorker.js' }).then(() => { /* render */ })
 
-// A browser extension already uses Alt+Shift+M, so Ctrl+Alt+K hides and shows the ⚙️ tab instead.
+// A browser extension already uses Alt+Shift+M, so Ctrl+Alt+K opens and closes the panel instead.
 startDevMocks({ shortcut: 'Ctrl+Alt+K' }).then(() => { /* render */ })
+
+// And Ctrl+Alt+J shrinks the ⚙️ tab to the screen edge, in place of Alt+Shift+H.
+startDevMocks({ shortcut: 'Ctrl+Alt+K', shrinkShortcut: 'Ctrl+Alt+J' }).then(() => { /* render */ })
 ```
 
 You need `serviceWorkerUrl` when your app runs under a base path, for example Vite's `base: '/checkout/'`.
 Without it, MSW looks for `/mockServiceWorker.js` and gets a 404. Then the console shows
 `[dev-mocks] Mocks are off because MSW failed to start.` and the ⚙️ button does not appear.
 
-`shortcut` joins one or more of `Ctrl`, `Alt`, `Shift` and `Meta` with `+` to one letter, one digit, or
+`shortcut` opens the panel and closes it again, and `shrinkShortcut` shrinks the ⚙️ tab to a bar on the
+screen edge and brings it back. Both are written the same way, and both are optional: the defaults are
+Alt+Shift+M and Alt+Shift+H. Give the two of them different keys. If both end up on the same keys, that
+key opens and closes the panel, nothing shrinks the ⚙️ tab, and the console shows
+`[dev-mocks] Both shortcuts are Alt+Shift+H, so that key opens and closes the panel and nothing shrinks the ⚙️ tab.`
+
+Each one joins one or more of `Ctrl`, `Alt`, `Shift` and `Meta` with `+` to one letter, one digit, or
 one of `F1` to `F12`. `Meta` is the ⌘ key on a Mac. The shortcut needs at least `Ctrl`, `Alt` or `Meta`,
 so that typing in a text field never fires it. When the text breaks these rules, for example `'Shift+D'`,
 the console shows `[dev-mocks] The shortcut "Shift+D" is not valid, so Alt+Shift+M is used.` and the

@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,29 +28,31 @@ import {
   type FlashField,
   type FormState,
 } from './form.js'
-import { CloseIcon, EyeOffIcon, MoveIcon, PulseIcon } from './icons.js'
+import { CloseIcon, MoveIcon, PulseIcon, ShrinkIcon } from './icons.js'
 import { Launcher } from './Launcher.js'
 import { RequestsTab } from './RequestsTab.js'
 import { ActiveRulesTab } from './ActiveRulesTab.js'
 import { RuleTab } from './RuleTab.js'
 import { readSession, takeSession, writeSession } from './session.js'
 import {
-  CORNER_KEY,
-  HIDDEN_KEY,
+  EDGE,
+  isSideEdge,
   matchesShortcut,
-  NEXT_CORNER,
+  NEXT_EDGE,
   OFF_FLAG,
   ON_FLAG,
   openingTab,
-  POP_CORNER,
-  readCorner,
   readSetting,
+  readSpot,
   ruleStatus,
+  SHRUNK_KEY,
+  SPOT_KEY,
+  spotText,
   TAB_LABELS,
   TABS,
   writeSetting,
-  type Corner,
   type Shortcut,
+  type Spot,
   type Tab,
 } from './settings.js'
 
@@ -57,6 +60,8 @@ const SHORTCUT = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ ↵' : 'Ctrl 
 // Read once per page load: the notice is written just before a reload and shown once after it.
 const notice = takeSession('notice')
 const TOAST_MS = 4500
+/** How close to the window's edge the panel may come, in pixels, when it lines up with the ⚙️ tab. */
+const POP_MARGIN = 8
 const NOT_FOUND = -1
 const OPEN_FLAG = '1'
 const CLOSED_FLAG = ''
@@ -85,12 +90,13 @@ interface Note {
   warn: boolean
 }
 
-export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
-  const [hidden, setHidden] = useState(() => readSetting(HIDDEN_KEY) === ON_FLAG)
-  const [corner, setCorner] = useState<Corner>(readCorner)
+export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: Shortcut; shrinkShortcut: Shortcut }) {
+  const [shrunk, setShrunk] = useState(() => readSetting(SHRUNK_KEY) === ON_FLAG)
+  const [spot, setSpot] = useState<Spot>(readSpot)
   const [focusLauncher, setFocusLauncher] = useState(false)
   const [focusSwitch, setFocusSwitch] = useState(focusSwitchOnLoad)
-  const [open, setOpen] = useState(() => !hidden && readSession('open') === OPEN_FLAG)
+  // The panel can be open while the ⚙️ tab is shrunk, so what was open last stands whichever it was.
+  const [open, setOpen] = useState(() => readSession('open') === OPEN_FLAG)
   const [rules] = useState<MockConfig[]>(() => errorController.getAllConfigs())
   const [tab, setTab] = useState<Tab>(() => openingTab(readSession('tab')))
   const [paused] = useState(() => errorController.isPaused())
@@ -105,6 +111,7 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
   const fabRef = useRef<HTMLButtonElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  const popRef = useRef<HTMLElement>(null)
   const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({ rule: null, active: null, requests: null })
 
   const jsonCheck = useMemo(() => checkJson(form.json), [form.json])
@@ -120,49 +127,101 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
     return () => clearTimeout(timer)
   }, [toast, toastHeld])
 
-  function close() {
-    setOpen(false)
-    setFocusSwitch(false)
-    writeSession('open', CLOSED_FLAG)
-    fabRef.current?.focus()
-  }
-
-  const changeHidden = useCallback((next: boolean) => {
-    setHidden(next)
-    writeSetting(HIDDEN_KEY, next ? ON_FLAG : OFF_FLAG)
-    if (!next) return
-    setOpen(false)
-    setFocusSwitch(false)
-    writeSession('open', CLOSED_FLAG)
+  const changeOpen = useCallback((next: boolean) => {
+    setOpen(next)
+    writeSession('open', next ? OPEN_FLAG : CLOSED_FLAG)
+    if (!next) setFocusSwitch(false)
   }, [])
+
+  const close = useCallback(() => {
+    changeOpen(false)
+    fabRef.current?.focus()
+  }, [changeOpen])
+
+  const changeShrunk = useCallback(
+    (next: boolean) => {
+      setShrunk(next)
+      writeSetting(SHRUNK_KEY, next ? ON_FLAG : OFF_FLAG)
+      // Shrinking puts the whole thing out of the way, so the open panel goes with the ⚙️ tab.
+      if (next) changeOpen(false)
+    },
+    [changeOpen],
+  )
 
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.repeat || !matchesShortcut(event, shortcut)) return
-      event.preventDefault()
+      if (event.repeat) return
       const root = rootRef.current?.getRootNode()
-      setFocusLauncher(root instanceof ShadowRoot && root.activeElement !== null)
-      changeHidden(!hidden)
+      const inPanel = root instanceof ShadowRoot && root.activeElement !== null
+      if (matchesShortcut(event, shortcut)) {
+        event.preventDefault()
+        if (open) {
+          close()
+          return
+        }
+        changeOpen(true)
+        // The tab sits before the panel in the page, so the next Tab press walks into the panel.
+        fabRef.current?.focus()
+        return
+      }
+      if (!matchesShortcut(event, shrinkShortcut)) return
+      event.preventDefault()
+      // The ⚙️ tab and the shrunk bar are two different buttons, so the one arriving takes the focus
+      // the one leaving had. Without this, the focus falls to the page and Tab starts again at the top.
+      setFocusLauncher(inPanel)
+      changeShrunk(!shrunk)
     }
     // Capture phase: a host editor that stops the key event would otherwise swallow the shortcut.
     addEventListener('keydown', onKey, true)
     return () => removeEventListener('keydown', onKey, true)
-  }, [hidden, shortcut, changeHidden])
+  }, [open, shrunk, shortcut, shrinkShortcut, changeOpen, changeShrunk, close])
 
-  function showButton() {
+  /**
+   * The bar on the edge opens the panel, and closes it again on a second click. Either way the ⚙️ tab
+   * stays shrunk, because that is the choice the developer made and a click on the bar does not undo it.
+   */
+  function pressBar() {
+    if (open) close()
+    else changeOpen(true)
+  }
+
+  function shrinkTab() {
+    changeShrunk(true)
     setFocusLauncher(true)
-    changeHidden(false)
   }
 
-  function hideButton() {
-    changeHidden(true)
-    setFocusLauncher(true)
+  function moveTo(next: Spot) {
+    setSpot(next)
+    writeSetting(SPOT_KEY, spotText(next))
   }
 
-  function moveTo(next: Corner) {
-    setCorner(next)
-    writeSetting(CORNER_KEY, next)
-  }
+  /*
+   * The panel opens beside the ⚙️ tab and lines up with it, so the eye goes straight from one to the
+   * other. It is measured after the panel is in the page and before the browser paints it, because
+   * only the panel knows how tall and wide it is, and the window can be smaller than the panel.
+   */
+  useLayoutEffect(() => {
+    const pop = popRef.current
+    if (!open || !pop) return
+    const place = () => {
+      const sideways = isSideEdge(spot.edge)
+      const edgeLength = sideways ? innerHeight : innerWidth
+      const panelSize = sideways ? pop.offsetHeight : pop.offsetWidth
+      const centred = spot.at * edgeLength - panelSize / 2
+      const at = Math.max(POP_MARGIN, Math.min(centred, edgeLength - panelSize - POP_MARGIN))
+      pop.style.setProperty('--dm-pop-at', `${Math.round(at)}px`)
+    }
+    place()
+    addEventListener('resize', place)
+    // On a window 520 px wide or narrower the panel's width follows its content, so switching from
+    // the rule list to the requests list changes it. Watching the panel itself catches that too.
+    const sizes = new ResizeObserver(place)
+    sizes.observe(pop)
+    return () => {
+      removeEventListener('resize', place)
+      sizes.disconnect()
+    }
+  }, [open, spot])
 
   const endFlash = useCallback((field: FlashField) => {
     setFlashing((current) => {
@@ -174,12 +233,8 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
   const flash = useMemo(() => ({ flashing, end: endFlash }), [flashing, endFlash])
 
   function toggle() {
-    if (open) {
-      close()
-      return
-    }
-    setOpen(true)
-    writeSession('open', OPEN_FLAG)
+    if (open) close()
+    else changeOpen(true)
   }
 
   /**
@@ -308,19 +363,21 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
       <Launcher
         buttonRef={fabRef}
         open={open}
-        hidden={hidden}
+        shrunk={shrunk}
         count={count}
         paused={paused}
-        corner={corner}
+        spot={spot}
         shortcutLabel={shortcut.label}
+        shrinkLabel={shrinkShortcut.label}
         autoFocus={focusLauncher}
         onToggle={toggle}
-        onShow={showButton}
-        onCornerChange={moveTo}
+        onOpen={pressBar}
+        onSpotChange={moveTo}
       />
 
       {open && (
         <section
+          ref={popRef}
           id="dm-pop"
           role="dialog"
           aria-labelledby="dm-title"
@@ -328,7 +385,9 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
           onDragOver={preventFileDrop}
           onDrop={preventFileDrop}
           className={clsx(
-            POP_CORNER[corner],
+            // Shrunk, the thing the panel lines up with is a 10 px bar, not a 36 px tab, so the panel
+            // moves in to 20 px from the edge. Any further out and it floats away from what opened it.
+            shrunk ? EDGE[spot.edge].popNear : EDGE[spot.edge].pop,
             // Do not put `overflow-hidden` alone here: a hidden box is still a scroll container, so
             // focusing a visually hidden radio makes the browser scroll the whole panel out of sight.
             // `overflow-clip` clips without scrolling; `overflow-hidden` stays as the fallback for
@@ -383,22 +442,22 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
               )}
               <button
                 type="button"
-                aria-label={`Move the dev mocks button to the ${NEXT_CORNER[corner].replace('-', ' ')} corner`}
-                title="Move ⚙️ to the next corner"
-                onClick={() => moveTo(NEXT_CORNER[corner])}
+                aria-label={`Move the dev mocks tab to the ${NEXT_EDGE[spot.edge]} edge of the screen`}
+                title="Move ⚙️ to the next edge · drag it, or use the arrow keys, to slide it along one"
+                onClick={() => moveTo({ edge: NEXT_EDGE[spot.edge], at: spot.at })}
                 className={clsx(ICON_BTN, FOCUS, 'hover:text-ink')}
               >
                 <MoveIcon className="h-4 w-4" />
               </button>
               <button
                 type="button"
-                aria-label={`Hide the dev mocks button. Press ${shortcut.label} to show it again.`}
-                aria-keyshortcuts={shortcut.label}
-                title={`Hide ⚙️ · ${shortcut.label} shows it again`}
-                onClick={hideButton}
+                aria-label={`Shrink the dev mocks tab to a bar on the screen edge. Press ${shrinkShortcut.label} to bring it back.`}
+                aria-keyshortcuts={shrinkShortcut.label}
+                title={`Shrink to the edge · the bar still opens this panel · ${shrinkShortcut.label} brings the ⚙️ tab back`}
+                onClick={shrinkTab}
                 className={clsx(ICON_BTN, FOCUS, 'hover:text-ink')}
               >
-                <EyeOffIcon className="h-4 w-4" />
+                <ShrinkIcon className="h-4 w-4" />
               </button>
               <button type="button" aria-label="Close dev mocks panel" onClick={close} className={clsx(ICON_BTN, FOCUS, 'hover:text-ink')}>
                 <CloseIcon className="h-4 w-4" />

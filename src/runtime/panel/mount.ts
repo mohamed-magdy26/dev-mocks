@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { errorController } from '../controller.js'
 import DevMocksPanel from './DevMocksPanel.js'
 import { PanelCrash } from './PanelCrash.js'
-import { hiddenNotice, HIDDEN_KEY, ON_FLAG, readSetting, type Shortcut } from './settings.js'
+import { ON_FLAG, readSetting, shrunkNotice, SHRUNK_KEY, type Shortcut } from './settings.js'
 import { css } from './styles.generated.js'
 
 const HOST_ID = 'dev-mocks-host'
@@ -18,16 +18,22 @@ const FONTS_URL =
  */
 let root: Root | undefined
 
-function panel(shortcut: Shortcut) {
-  // Wrapped, so a render error inside the panel shows the message instead of leaving a blank shadow root.
-  return createElement(PanelCrash, null, createElement(DevMocksPanel, { shortcut }))
+/** `shortcut` opens and closes the panel. `shrinkShortcut` shrinks the ⚙️ tab to the edge and back. */
+export interface Keys {
+  shortcut: Shortcut
+  shrinkShortcut: Shortcut
 }
 
-export function mountPanel(shortcut: Shortcut): void {
+function panel(keys: Keys) {
+  // Wrapped, so a render error inside the panel shows the message instead of leaving a blank shadow root.
+  return createElement(PanelCrash, null, createElement(DevMocksPanel, keys))
+}
+
+export function mountPanel(keys: Keys): void {
   const existing = document.getElementById(HOST_ID)
   if (existing && root) {
     // Mounted by this same copy of the module, so rendering again is all that is needed.
-    root.render(panel(shortcut))
+    root.render(panel(keys))
     return
   }
   // A host with no root of ours belongs to a copy of this module the dev server has replaced. Its
@@ -41,13 +47,13 @@ export function mountPanel(shortcut: Shortcut): void {
   root?.unmount()
   root = undefined
 
-  const notice = hiddenNotice(
+  const notice = shrunkNotice(
     {
-      hidden: readSetting(HIDDEN_KEY) === ON_FLAG,
+      shrunk: readSetting(SHRUNK_KEY) === ON_FLAG,
       paused: errorController.isPaused(),
       count: errorController.getAllConfigs().length,
     },
-    shortcut,
+    keys.shrinkShortcut,
   )
   if (notice) console.info(notice)
 
@@ -71,5 +77,5 @@ export function mountPanel(shortcut: Shortcut): void {
   const container = document.createElement('div')
   shadow.append(style, container)
   root = createRoot(container)
-  root.render(panel(shortcut))
+  root.render(panel(keys))
 }

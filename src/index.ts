@@ -3,8 +3,10 @@ export interface StartDevMocksOptions {
   enabled?: boolean
   /** Where the dev server serves the MSW worker file. Set it when the app runs under a base path, for example `/checkout/mockServiceWorker.js`. */
   serviceWorkerUrl?: string
-  /** Hides and shows the ⚙️ button. Ctrl, Alt, Shift or Meta joined by "+" to one letter, digit or F1 to F12, with at least Ctrl, Alt or Meta. Default "Alt+Shift+M". */
+  /** Opens the panel and closes it again. Ctrl, Alt, Shift or Meta joined by "+" to one letter, digit or F1 to F12, with at least Ctrl, Alt or Meta. Default "Alt+Shift+M". */
   shortcut?: string
+  /** Shrinks the ⚙️ tab to a thin bar on the screen edge, and brings it back. Same form as `shortcut`. Default "Alt+Shift+H". */
+  shrinkShortcut?: string
 }
 
 /** Starts MSW and mounts the ⚙️ panel in development. Resolves immediately in any other mode. */

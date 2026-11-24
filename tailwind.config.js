@@ -65,8 +65,8 @@ export default {
       minHeight: { json: '132px' },
       minWidth: { badge: '54px' },
       maxWidth: { toast: 'calc(100% - 28px)' },
-      // 84 px puts the middle of the 44 px hidden-button bar at the middle of the 68 px tab, which sits 72 px from the edge.
-      inset: { edge: '72px', sliver: '84px', toast: '74px' },
+      // The toast sits 74 px up from the bottom of the panel, clear of the footer row under it.
+      inset: { toast: '74px' },
       translate: { 'drag-x': 'var(--dm-drag-x)', 'drag-y': 'var(--dm-drag-y)', tip: 'var(--dm-tip-shift, 0px)' },
       zIndex: { top: '2147483000' },
       letterSpacing: { label: '0.06em' },
