@@ -111,7 +111,7 @@ function init(cwd: string, entryOption: string | undefined, publicDir: string): 
     console.log(`✔ wrapped the render call in ${target.file}:${statement.line}`)
   }
 
-  console.log('\nDone. Start your dev server. A ⚙️ button appears at the bottom right of the page.')
+  console.log('\nDone. Start your dev server. A ⚙️ tab appears on the right edge of the page, near the bottom.')
 }
 
 function main(): void {

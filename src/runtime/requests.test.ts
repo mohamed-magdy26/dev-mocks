@@ -52,7 +52,7 @@ describe('requestLog', () => {
   it('records a request as pending, then stores its status, newest first', () => {
     requestLog.start(new Request('https://api.test/api/menu'), 'a')
     requestLog.start(new Request('https://api.test/api/cart', { method: 'POST' }), 'b')
-    requestLog.finish('a', new Response(null, { status: 404 }))
+    requestLog.finish('a', new Response(null, { status: 404 }), false)
     const [cart, menu] = requestLog.getSnapshot()
     expect(cart).toMatchObject({ id: 'b', method: 'POST', status: 'pending' })
     expect(menu).toMatchObject({ id: 'a', method: 'GET', status: 404 })
@@ -61,7 +61,7 @@ describe('requestLog', () => {
 
   it('marks a network error response as failed', () => {
     requestLog.start(new Request('https://api.test/api/menu'), 'a')
-    requestLog.finish('a', Response.error())
+    requestLog.finish('a', Response.error(), false)
     expect(requestLog.getSnapshot()[0].status).toBe('failed')
   })
 
@@ -72,9 +72,45 @@ describe('requestLog', () => {
     requestLog.start(new Request('https://api.test/api/user'), 'b')
     requestLog.start(new Request('https://api.test/api/other'), 'c')
     const [other, user, cart] = requestLog.getSnapshot()
-    expect(cart).toMatchObject({ rule: '/api/menu, /api/cart', tag: 'delayed' })
-    expect(user).toMatchObject({ rule: '/api/user', tag: 'mocked' })
+    // The key carries the method, origin and body condition a rule claims, so rules on one path stay apart.
+    expect(cart).toMatchObject({ rule: '* * * /api/menu, /api/cart', tag: 'delayed' })
+    expect(user).toMatchObject({ rule: '* * * /api/user', tag: 'mocked' })
     expect(other.rule).toBeUndefined()
+  })
+
+  it('drops a delay-only label when the rule turned out not to answer the request', () => {
+    // The body condition cannot be judged in start(), so the row is guessed as delayed. The request
+    // then went straight to the real server, and the handler reported no decision for it.
+    errorController.addConfig({
+      scenario: 'slow',
+      endpoints: ['/api/orders'],
+      delayMs: 2000,
+      bodyMatch: { field: 'coupon', value: 'EXPIRED' },
+    })
+    requestLog.start(new Request('https://api.test/api/orders', { method: 'POST' }), 'a')
+    expect(requestLog.getSnapshot()[0].tag).toBe('delayed')
+    requestLog.finish('a', new Response(null, { status: 200 }), false)
+    const row = requestLog.getSnapshot()[0]
+    expect(row.tag).toBeUndefined()
+    expect(row.rule).toBeUndefined()
+  })
+
+  it('labels a row from what MSW really did, not from running the matcher a second time', () => {
+    errorController.addConfig({ scenario: 'custom', endpoints: ['/api/orders'], customStatusCode: 500 })
+    requestLog.start(new Request('https://api.test/api/orders'), 'a')
+    // The guess made in start() said a rule would answer, and MSW then let the request through.
+    expect(requestLog.getSnapshot()[0].tag).toBe('mocked')
+    requestLog.finish('a', new Response(null, { status: 200 }), false)
+    const row = requestLog.getSnapshot()[0]
+    expect(row.tag).toBeUndefined()
+    expect(row.rule).toBeUndefined()
+  })
+
+  it('labels a row as mocked when a rule answered that start() could not judge', () => {
+    requestLog.start(new Request('https://api.test/api/orders'), 'a')
+    expect(requestLog.getSnapshot()[0].tag).toBeUndefined()
+    requestLog.finish('a', new Response(null, { status: 400 }), true)
+    expect(requestLog.getSnapshot()[0].tag).toBe('mocked')
   })
 
   it('keeps only the newest 100 requests', () => {
@@ -113,11 +149,11 @@ describe('requestLog', () => {
     const unsubscribe = requestLog.subscribe(listener)
     requestLog.start(new Request('https://api.test/api/menu'), 'a')
     const before = requestLog.getSnapshot()
-    requestLog.finish('a', new Response(null, { status: 200 }))
+    requestLog.finish('a', new Response(null, { status: 200 }), false)
     expect(requestLog.getSnapshot()).not.toBe(before)
     expect(before[0].status).toBe('pending')
     requestLog.clear()
-    requestLog.finish('a', new Response(null, { status: 200 }))
+    requestLog.finish('a', new Response(null, { status: 200 }), false)
     expect(requestLog.getSnapshot()).toEqual([])
     expect(listener).toHaveBeenCalledTimes(3)
     unsubscribe()

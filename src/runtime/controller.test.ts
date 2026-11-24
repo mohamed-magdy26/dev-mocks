@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { errorController, splitEndpoints } from './controller.js'
+import { bodyHasValue, errorController, splitEndpoints } from './controller.js'
 
-const request = (url: string) => new Request(url)
+const request = (url: string, method = 'GET') => new Request(url, { method })
 
 describe('errorController.getConfigForRequest', () => {
   beforeEach(() => {
@@ -29,6 +29,37 @@ describe('errorController.getConfigForRequest', () => {
     errorController.addConfig({ scenario: '401', endpoints: ['/api/menu?page=2'], matchFullUrl: true })
     expect(errorController.getConfigForRequest(request('https://api.test/api/menu?page=2'))?.scenario).toBe('401')
     expect(errorController.getConfigForRequest(request('https://api.test/api/menu?page=3'))).toBeUndefined()
+  })
+
+  it('matches only the saved origin when matchOrigin is true', () => {
+    errorController.addConfig({
+      scenario: '500',
+      endpoints: ['/v1/orders'],
+      origin: 'https://eu.api.test',
+      matchOrigin: true,
+    })
+    expect(errorController.getConfigForRequest(request('https://eu.api.test/v1/orders'))?.scenario).toBe('500')
+    expect(errorController.getConfigForRequest(request('https://us.api.test/v1/orders'))).toBeUndefined()
+  })
+
+  it('treats http and https as different origins', () => {
+    errorController.addConfig({
+      scenario: '404',
+      endpoints: ['/v1/orders'],
+      origin: 'https://api.test',
+      matchOrigin: true,
+    })
+    expect(errorController.getConfigForRequest(request('http://api.test/v1/orders'))).toBeUndefined()
+  })
+
+  it('ignores the origin when matchOrigin is off', () => {
+    errorController.addConfig({ scenario: '401', endpoints: ['/v1/orders'], origin: 'https://eu.api.test' })
+    expect(errorController.getConfigForRequest(request('https://us.api.test/v1/orders'))?.scenario).toBe('401')
+  })
+
+  it('matches every origin for a rule saved without one', () => {
+    errorController.addConfig({ scenario: '403', endpoints: ['/v1/orders'], matchOrigin: true })
+    expect(errorController.getConfigForRequest(request('https://us.api.test/v1/orders'))?.scenario).toBe('403')
   })
 
   it('matches the wildcard base itself but not a neighbouring path', () => {
@@ -108,6 +139,37 @@ describe('errorController.getConfigForRequest', () => {
     expect(errorController.getConfigForRequest(request('https://api.test/api/cart'))?.scenario).toBe('404')
   })
 
+  it('keeps both rules when each one pins the same path to its own server', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/v1/orders'], origin: 'https://eu.api.test', matchOrigin: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/v1/orders'], origin: 'https://us.api.test', matchOrigin: true })
+    expect(errorController.getAllConfigs()).toHaveLength(2)
+    expect(errorController.getConfigForRequest(request('https://eu.api.test/v1/orders'))?.scenario).toBe('500')
+    expect(errorController.getConfigForRequest(request('https://us.api.test/v1/orders'))?.scenario).toBe('404')
+  })
+
+  it('replaces a rule when the new one pins the same path to the same server', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/v1/orders'], origin: 'https://eu.api.test', matchOrigin: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/v1/orders'], origin: 'https://eu.api.test', matchOrigin: true })
+    expect(errorController.getAllConfigs()).toHaveLength(1)
+    expect(errorController.getConfigForRequest(request('https://eu.api.test/v1/orders'))?.scenario).toBe('404')
+  })
+
+  it('removes one server’s rule and leaves the other server’s rule for the same path', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/v1/orders'], origin: 'https://eu.api.test', matchOrigin: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/v1/orders'], origin: 'https://us.api.test', matchOrigin: true })
+    errorController.removeConfig({ scenario: '500', endpoints: ['/v1/orders'], origin: 'https://eu.api.test', matchOrigin: true })
+    expect(errorController.getConfigForRequest(request('https://eu.api.test/v1/orders'))).toBeUndefined()
+    expect(errorController.getConfigForRequest(request('https://us.api.test/v1/orders'))?.scenario).toBe('404')
+  })
+
+  it('loads a rule stored before the origin field existed, and it still matches every server', () => {
+    const stored = '[{"scenario":"500","endpoints":["/v1/orders"],"matchFullUrl":false}]'
+    vi.stubGlobal('localStorage', { setItem: vi.fn(), getItem: vi.fn(() => stored) })
+    errorController.loadFromLocalStorage()
+    expect(errorController.getConfigForRequest(request('https://eu.api.test/v1/orders'))?.scenario).toBe('500')
+    expect(errorController.getConfigForRequest(request('https://us.api.test/v1/orders'))?.scenario).toBe('500')
+  })
+
   it('ignores a saved value that is not a list', () => {
     vi.stubGlobal('localStorage', { setItem: vi.fn(), getItem: vi.fn(() => '{}') })
     errorController.loadFromLocalStorage()
@@ -152,7 +214,9 @@ describe('errorController.getConfigForRequest', () => {
       { scenario: '401', endpoints: ['/api/user'] },
     ]
     vi.stubGlobal('localStorage', { setItem, getItem: vi.fn(() => JSON.stringify(saved)) })
-    expect(errorController.addConfig({ scenario: '404', endpoints: ['/api/cart'] }, ['/api/menu'])).toBe(true)
+    expect(
+      errorController.addConfig({ scenario: '404', endpoints: ['/api/cart'] }, { scenario: '500', endpoints: ['/api/menu'] }),
+    ).toBe(true)
     expect(errorController.getAllConfigs().map((c) => c.scenario)).toEqual(['401', '404'])
     expect(setItem).toHaveBeenCalledTimes(1)
   })
@@ -198,6 +262,80 @@ describe('errorController.getConfigForRequest', () => {
   })
 })
 
+describe('matching on the HTTP method', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', { setItem: vi.fn(), getItem: vi.fn(() => null) })
+    errorController.clearAll()
+    errorController.setPaused(false)
+  })
+
+  it('keeps a GET rule and a POST rule for one path side by side', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders'], method: 'GET', matchMethod: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/orders'], method: 'POST', matchMethod: true })
+    expect(errorController.getAllConfigs()).toHaveLength(2)
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders', 'GET'))?.scenario).toBe('500')
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders', 'POST'))?.scenario).toBe('404')
+  })
+
+  it('answers every method while the switch is off, so the method is only remembered text', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders'], method: 'POST' })
+    for (const method of ['GET', 'POST', 'DELETE']) {
+      expect(errorController.getConfigForRequest(request('https://api.test/api/orders', method))?.scenario).toBe('500')
+    }
+  })
+
+  it('keeps two body conditions on one path side by side instead of deleting the first', () => {
+    errorController.addConfig({
+      scenario: '400',
+      endpoints: ['/api/orders'],
+      method: 'POST',
+      matchMethod: true,
+      bodyMatch: { field: 'coupon', value: 'EXPIRED' },
+    })
+    errorController.addConfig({
+      scenario: '409',
+      endpoints: ['/api/orders'],
+      method: 'POST',
+      matchMethod: true,
+      bodyMatch: { field: 'coupon', value: 'USED' },
+    })
+    expect(errorController.getAllConfigs()).toHaveLength(2)
+    const post = request('https://api.test/api/orders', 'POST')
+    expect(errorController.getConfigForRequest(post, '{"coupon":"EXPIRED"}')?.scenario).toBe('400')
+    expect(errorController.getConfigForRequest(post, '{"coupon":"USED"}')?.scenario).toBe('409')
+  })
+
+  it('answers every method for a rule saved without one, which is every rule saved before this field existed', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders'] })
+    for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+      expect(errorController.getConfigForRequest(request('https://api.test/api/orders', method))?.scenario).toBe('500')
+    }
+  })
+
+  it('does not answer a method the rule was not made for', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders'], method: 'POST', matchMethod: true })
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders', 'GET'))).toBeUndefined()
+  })
+
+  it('replaces only the rule for the same method on the same path', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders'], method: 'GET', matchMethod: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/orders'], method: 'POST', matchMethod: true })
+    errorController.addConfig({ scenario: 'network', endpoints: ['/api/orders'], method: 'GET', matchMethod: true })
+    expect(errorController.getAllConfigs()).toHaveLength(2)
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders', 'GET'))?.scenario).toBe('network')
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders', 'POST'))?.scenario).toBe('404')
+  })
+
+  it('removes only the rule for the method asked for', () => {
+    const get = { scenario: '500' as const, endpoints: ['/api/orders'], method: 'GET', matchMethod: true }
+    errorController.addConfig(get)
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/orders'], method: 'POST', matchMethod: true })
+    errorController.removeConfig(get)
+    expect(errorController.getAllConfigs()).toHaveLength(1)
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders', 'POST'))?.scenario).toBe('404')
+  })
+})
+
 describe('splitEndpoints', () => {
   it('splits at commas between endpoints', () => {
     expect(splitEndpoints('/api/users, /api/posts/*')).toEqual(['/api/users', '/api/posts/*'])
@@ -209,5 +347,38 @@ describe('splitEndpoints', () => {
     expect(splitEndpoints('https://api.test/api/products?ids=1,2,3')).toEqual(['https://api.test/api/products?ids=1,2,3'])
     expect(splitEndpoints('/page?sort=createdAt,desc, /api/cart')).toEqual(['/page?sort=createdAt,desc', '/api/cart'])
     expect(splitEndpoints('/page?ids=1,https://api.test/x')).toEqual(['/page?ids=1', 'https://api.test/x'])
+  })
+})
+
+describe('bodyHasValue', () => {
+  const match = (field: string, value: string) => ({ field, value })
+
+  it('finds a value at the top of the body, and compares it as text', () => {
+    expect(bodyHasValue('{"coupon":"EXPIRED"}', match('coupon', 'EXPIRED'))).toBe(true)
+    expect(bodyHasValue('{"coupon":"WELCOME"}', match('coupon', 'EXPIRED'))).toBe(false)
+    // The number 7 matches the typed "7", because the box the user types in holds text.
+    expect(bodyHasValue('{"retries":7}', match('retries', '7'))).toBe(true)
+    expect(bodyHasValue('{"ok":false}', match('ok', 'false'))).toBe(true)
+  })
+
+  it('walks a dot path through objects and arrays', () => {
+    expect(bodyHasValue('{"user":{"role":"admin"}}', match('user.role', 'admin'))).toBe(true)
+    expect(bodyHasValue('{"items":[{"sku":"A1"}]}', match('items.0.sku', 'A1'))).toBe(true)
+    // `length` is an array's own property, unlike `constructor` below, so the path may read it.
+    expect(bodyHasValue('{"items":[1,2]}', match('items.length', '2'))).toBe(true)
+    expect(bodyHasValue('{"user":{"role":"admin"}}', match('user.name', 'admin'))).toBe(false)
+  })
+
+  it('reads only what the body itself carries, never an inherited property', () => {
+    expect(bodyHasValue('{"a":1}', match('constructor', 'function Object() { [native code] }'))).toBe(false)
+    expect(bodyHasValue('{"a":1}', match('__proto__.x', 'anything'))).toBe(false)
+  })
+
+  it('never matches a body that is not JSON, is empty, or holds an object at the path', () => {
+    expect(bodyHasValue('', match('coupon', 'EXPIRED'))).toBe(false)
+    expect(bodyHasValue('not json', match('coupon', 'EXPIRED'))).toBe(false)
+    // String({}) is "[object Object]", which must not be allowed to match anything the user types.
+    expect(bodyHasValue('{"user":{}}', match('user', '[object Object]'))).toBe(false)
+    expect(bodyHasValue('{"coupon":null}', match('coupon', 'null'))).toBe(false)
   })
 })

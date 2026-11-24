@@ -8,6 +8,15 @@ export const INPUT =
   'min-w-0 rounded-field border border-line bg-sunken px-3 font-mono text-body font-medium tracking-tight text-ink outline-none transition-colors placeholder:text-faint hover:border-line-strong focus:border-accent focus:shadow-focus aria-invalid:border-red aria-invalid:shadow-focus-red'
 export const CHIP =
   'h-8 rounded-full border border-line bg-raised px-2.5 font-mono text-sm font-semibold leading-none text-dim transition-colors hover:border-line-strong hover:text-ink aria-pressed:border-accent aria-pressed:bg-accent aria-pressed:text-accent-ink'
+/**
+ * A chip whose chosen look comes from a radio input hidden inside the label, rather than from
+ * `aria-pressed` on a button. Use it when the chips are the complete set of answers and exactly one
+ * is always chosen, so the arrow keys move between them and a screen reader hears one group.
+ */
+export const CHIP_RADIO =
+  'h-8 rounded-full border border-line bg-raised px-2.5 font-mono text-sm font-semibold leading-none text-dim transition-colors hover:border-line-strong hover:text-ink ' +
+  'has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-accent-ink ' +
+  'has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent'
 export const MINI =
   'h-7 rounded-md border border-line bg-raised px-2.5 text-note font-semibold leading-none text-dim hover:border-line-strong hover:text-ink'
 export const GHOST =

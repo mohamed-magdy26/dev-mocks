@@ -10,15 +10,16 @@ export async function start({ serviceWorkerUrl = '/mockServiceWorker.js', shortc
   requestLog.load()
   addEventListener('pagehide', requestLog.flush)
   const worker = setupWorker(...handlers)
-  const onResponse = ({ response, requestId }: { response: Response; requestId: string }) => {
-    requestLog.finish(requestId, response)
-    void requestLog.recordBody(requestId, response)
+  const onResponse = (mocked: boolean) => (event: { response: Response; requestId: string }) => {
+    requestLog.finish(event.requestId, event.response, mocked)
+    void requestLog.recordBody(event.requestId, event.response)
   }
   worker.events.on('request:start', ({ request, requestId }) => {
     if (!isAppAsset(request)) requestLog.start(request, requestId)
   })
-  worker.events.on('response:mocked', onResponse)
-  worker.events.on('response:bypass', onResponse)
+  // Two events, so the Requests tab can label a row from what really happened instead of guessing.
+  worker.events.on('response:mocked', onResponse(true))
+  worker.events.on('response:bypass', onResponse(false))
   await worker.start({ onUnhandledRequest: 'bypass', serviceWorker: { url: serviceWorkerUrl } })
   mountPanel(keys)
 }

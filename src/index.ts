@@ -3,7 +3,7 @@ export interface StartDevMocksOptions {
   enabled?: boolean
   /** Where the dev server serves the MSW worker file. Set it when the app runs under a base path, for example `/checkout/mockServiceWorker.js`. */
   serviceWorkerUrl?: string
-  /** Hides and shows the ⚙️ button. Ctrl, Alt, Shift or Meta joined by "+" to one letter, digit or F1 to F12, with at least Ctrl, Alt or Meta. Default "Alt+Shift+D". */
+  /** Hides and shows the ⚙️ button. Ctrl, Alt, Shift or Meta joined by "+" to one letter, digit or F1 to F12, with at least Ctrl, Alt or Meta. Default "Alt+Shift+M". */
   shortcut?: string
 }
 

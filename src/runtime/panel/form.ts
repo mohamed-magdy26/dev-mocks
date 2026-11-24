@@ -1,19 +1,39 @@
 import type { JsonBodyType } from 'msw'
-import { MEGABYTE, parseEndpoint, splitEndpoints, STORAGE_LIMIT_MB, type MockConfig } from '../controller.js'
+import { MEGABYTE, parseEndpoint, splitEndpoints, STORAGE_LIMIT_MB, type MockAnswer, type MockConfig } from '../controller.js'
 import { defaultBody, NULL_BODY_STATUSES } from '../handlers.js'
 import { BODIES_LIMIT_MB, BODY_LIMIT_MB, type LoggedRequest, type MissingBody, type RecordedBody } from '../requests.js'
 
 export type Kind = 'response' | 'delay' | 'network' | 'timeout'
+/** What the calls after the first ones get: a status with a body, or the real server's own answer. */
+export type LaterKind = 'response' | 'real'
 export type Tone = 'red' | 'amber' | 'blue' | 'grey' | 'lime'
-export type FlashField = 'path' | 'kind' | 'delay' | 'status' | 'json'
+export type FlashField = 'path' | 'kind' | 'delay' | 'status' | 'json' | 'sequence' | 'body'
 
 export interface FormState {
   path: string
   full: boolean
+  origin: string
+  matchOrigin: boolean
+  /** The method of the request this rule was made from, upper case. Empty when the path was typed by hand. */
+  method: string
+  matchMethod: boolean
   kind: Kind
   delay: string
   status: string
   json: string
+  /**
+   * True while the rule answers differently after its first calls. Its own field, not `firstCalls !== ''`:
+   * otherwise one Backspace on the count box would unmount the box the user is typing in.
+   */
+  sequenceOn: boolean
+  /** How many calls the answer above covers. Empty while the user is retyping it, which `findProblem` refuses. */
+  firstCalls: string
+  laterKind: LaterKind
+  laterStatus: string
+  laterJson: string
+  /** A dot path into the request body, for example `coupon`. Empty means the body is not looked at. */
+  bodyField: string
+  bodyValue: string
 }
 
 export interface Preset {
@@ -83,7 +103,29 @@ const MAX_SUGGESTIONS = 6
 export const STATUS_DIGITS = String(STATUS_MAX).length
 export const DEFAULT_BODY_LABEL = 'default body'
 
-export const EMPTY_FORM: FormState = { path: '', full: false, kind: 'response', delay: '', status: '500', json: '' }
+export const EMPTY_FORM: FormState = {
+  path: '',
+  full: false,
+  origin: '',
+  matchOrigin: false,
+  method: '',
+  matchMethod: false,
+  kind: 'response',
+  delay: '',
+  status: '500',
+  json: '',
+  sequenceOn: false,
+  firstCalls: '',
+  laterKind: 'response',
+  laterStatus: '500',
+  laterJson: '',
+  bodyField: '',
+  bodyValue: '',
+}
+
+export const FIRST_CALLS_CHIPS = ['1', '2', '3']
+export const FIRST_CALLS_MAX_DIGITS = 3
+export const MIN_FIRST_CALLS = 1
 
 export function toneForStatus(code: number, mocked: boolean): Tone {
   if (code >= STATUS_FLOOR.serverError) return 'red'
@@ -121,7 +163,16 @@ export const MISSING_BODY_TEXT: Record<MissingBody, string> = {
 
 /** Fills the form from a request that no rule answered, with the real status and body when the panel kept them. */
 export function requestToForm(form: FormState, request: LoggedRequest, body: RecordedBody): { form: FormState; note: string } {
-  const withPath: FormState = { ...form, path: new URL(request.url).pathname, full: false }
+  const picked = new URL(request.url)
+  const withPath: FormState = {
+    ...form,
+    path: picked.pathname,
+    full: false,
+    origin: picked.origin,
+    matchOrigin: true,
+    method: request.method.toUpperCase(),
+    matchMethod: true,
+  }
   if (typeof request.status !== 'number') return { form: withPath, note: '' }
   if ('missing' in body) return { form: withPath, note: MISSING_BODY_TEXT[body.missing] }
   try {
@@ -188,10 +239,29 @@ export function isPresetActive(form: FormState, preset: Preset): boolean {
   return form.status === preset.status && form.json.trim() === (preset.json ?? '').trim()
 }
 
+/** What is wrong with the two-step answer, or undefined when the rule answers the same way every time. */
+function sequenceProblem(form: FormState): { text: string; warn: boolean } | undefined {
+  if (!form.sequenceOn) return undefined
+  if (Number(form.firstCalls) < MIN_FIRST_CALLS) {
+    return { text: `The first calls must be ${MIN_FIRST_CALLS} or more, or turn the switch off.`, warn: true }
+  }
+  if (form.laterKind !== 'response') return undefined
+  if (statusProblem(form.laterStatus)) return { text: 'Fix the status code of the later calls first.', warn: true }
+  if (!isNullBody(form.laterStatus) && checkJson(form.laterJson).state === 'bad') {
+    return { text: 'Fix the JSON of the later calls first.', warn: true }
+  }
+  return undefined
+}
+
 export function findProblem(form: FormState, json = checkJson(form.json)): { text: string; warn: boolean } | undefined {
   const endpoints = splitEndpoints(form.path)
   if (endpoints.length === 0) return { text: 'Type a request path, or pick one in the Requests tab.', warn: false }
   if (endpoints.some((endpoint) => !parseEndpoint(endpoint))) return { text: 'One of the paths is not a valid URL.', warn: true }
+  // Checked before the response fields, because a sequence can sit on a delay, network or hang rule too.
+  const sequence = sequenceProblem(form)
+  if (sequence) return sequence
+  if (form.bodyField.trim() && !form.bodyValue.trim()) return { text: 'Type the value the body must carry.', warn: true }
+  if (!form.bodyField.trim() && form.bodyValue.trim()) return { text: 'Type the body field to look in.', warn: true }
   if (form.kind !== 'response') return undefined
   if (!form.status) return { text: 'Type a status code, or pick a preset.', warn: true }
   if (statusProblem(form.status)) return { text: 'Fix the status code first.', warn: true }
@@ -199,8 +269,39 @@ export function findProblem(form: FormState, json = checkJson(form.json)): { tex
   return undefined
 }
 
+/** The answer the calls after the first ones get. `scenario: 'none'` lets the request through to the real server. */
+function laterAnswer(form: FormState): MockAnswer {
+  if (form.laterKind === 'real') return { scenario: 'none' }
+  const customResponse =
+    isNullBody(form.laterStatus) || !form.laterJson.trim() ? undefined : (JSON.parse(form.laterJson) as JsonBodyType)
+  return { scenario: 'custom', customStatusCode: Number(form.laterStatus), customResponse }
+}
+
 export function formToRule(form: FormState): MockConfig {
-  const base = { endpoints: splitEndpoints(form.path), matchFullUrl: form.full }
+  const endpoints = splitEndpoints(form.path)
+  const firstCalls = Number(form.firstCalls)
+  // Both fields go in together, so a rule can never hold a count with no answer to change to.
+  const sequence = form.sequenceOn && firstCalls >= MIN_FIRST_CALLS ? { firstCalls, later: laterAnswer(form) } : {}
+  // One origin can only speak for one path, so a rule holding several paths stops enforcing it.
+  const pinned = form.matchOrigin && form.origin && endpoints.length === 1
+  const base = {
+    endpoints,
+    matchFullUrl: form.full,
+    // `undefined` keeps the saved rule small, and keeps an origin-less rule identical to one saved before this field existed.
+    origin: form.origin || undefined,
+    matchOrigin: pinned ? true : undefined,
+    // Kept whatever the switch says, like the origin above, so turning the switch off and on again
+    // does not send the user back to the Requests tab to find the request a second time.
+    method: form.method ? form.method.toUpperCase() : undefined,
+    matchMethod: form.matchMethod && form.method ? true : undefined,
+    // Both halves go in together, so a rule can never hold a field with no value to compare it to.
+    // Both are trimmed, so a trailing space typed in either box cannot stop the rule ever matching.
+    bodyMatch:
+      form.bodyField.trim() && form.bodyValue.trim()
+        ? { field: form.bodyField.trim(), value: form.bodyValue.trim() }
+        : undefined,
+    ...sequence,
+  }
   const delayMs = Number(form.delay) || undefined
   switch (form.kind) {
     case 'delay':
@@ -223,7 +324,18 @@ export function ruleToForm(rule: MockConfig): FormState {
     ...EMPTY_FORM,
     path: rule.endpoints.join(', '),
     full: Boolean(rule.matchFullUrl),
+    origin: rule.origin ?? '',
+    matchOrigin: Boolean(rule.matchOrigin),
+    method: rule.method ?? '',
+    matchMethod: Boolean(rule.matchMethod),
     delay: rule.delayMs ? String(rule.delayMs) : '',
+    sequenceOn: Boolean(rule.firstCalls && rule.later),
+    firstCalls: rule.firstCalls ? String(rule.firstCalls) : '',
+    laterKind: rule.later?.scenario === 'none' ? 'real' : 'response',
+    laterStatus: String(rule.later?.customStatusCode || EMPTY_FORM.laterStatus),
+    laterJson: rule.later?.customResponse === undefined ? '' : pretty(rule.later.customResponse),
+    bodyField: rule.bodyMatch?.field ?? '',
+    bodyValue: rule.bodyMatch?.value ?? '',
   }
   const json = rule.customResponse === undefined ? '' : pretty(rule.customResponse)
   switch (rule.scenario) {
@@ -245,34 +357,100 @@ export function ruleToForm(rule: MockConfig): FormState {
   }
 }
 
-export function describeRule(rule: MockConfig): { badge: string; tone: Tone; meta: string } {
-  if (rule.scenario === 'none') return { badge: 'Off', tone: 'grey', meta: 'does nothing' }
+/**
+ * The host and port of a stored origin, or the raw text when it is not a URL. The rules list renders
+ * with no error boundary around it, so a hand-edited localStorage entry must not blank the whole list.
+ */
+function originLabel(origin: string): string {
+  try {
+    return new URL(origin).host
+  } catch {
+    return origin
+  }
+}
+
+/**
+ * Moves the origin of a pasted full URL out of the path text and onto the origin line.
+ * Returns undefined when there is nothing to lift, so the field keeps what the user typed.
+ */
+export function liftPastedOrigin(form: FormState): FormState | undefined {
+  const endpoints = splitEndpoints(form.path)
+  if (endpoints.length !== 1 || !/^https?:\/\//i.test(endpoints[0])) return undefined
+  try {
+    const url = new URL(endpoints[0])
+    return { ...form, path: `${url.pathname}${url.search}`, origin: url.origin, matchOrigin: true }
+  } catch {
+    // Not a URL after all, so the caller keeps the text and findProblem() reports it on save.
+    return undefined
+  }
+}
+
+/** Says what changes after the first calls, or nothing at all when the rule never changes. */
+function sequenceLabel(rule: MockConfig): string {
+  if (!rule.firstCalls || !rule.later) return ''
+  const after = rule.later.scenario === 'none' ? 'the real server' : String(rule.later.customStatusCode || FALLBACK_STATUS)
+  return ` · first ${plural(rule.firstCalls, 'call')}, then ${after}`
+}
+
+export interface RuleView {
+  badge: string
+  tone: Tone
+  meta: string
+  /** The method the rule answers, or 'ANY' when it answers them all. */
+  method: string
+}
+
+export function describeRule(rule: MockConfig): RuleView {
+  const method = rule.matchMethod && rule.method ? rule.method : 'ANY'
+  if (rule.scenario === 'none') return { badge: 'Off', tone: 'grey', meta: 'does nothing', method }
   const form = ruleToForm(rule)
   const delay = Number(form.delay)
-  const query = rule.matchFullUrl ? ' · query must match' : ''
+  const origin = rule.matchOrigin && rule.origin ? ` · ${originLabel(rule.origin)} only` : ''
+  const body = rule.bodyMatch ? ` · body ${rule.bodyMatch.field} = ${rule.bodyMatch.value}` : ''
+  const query = `${origin}${rule.matchFullUrl ? ' · query must match' : ''}${body}${sequenceLabel(rule)}`
   switch (form.kind) {
     case 'delay':
-      return { badge: 'Delay', tone: 'blue', meta: `waits ${formatMs(delay)} · real response${query}` }
+      return { badge: 'Delay', tone: 'blue', meta: `waits ${formatMs(delay)} · real response${query}`, method }
     case 'network':
-      return { badge: 'Network', tone: 'red', meta: `${delay ? `fails after ${formatMs(delay)}` : 'fails at once'}${query}` }
+      return { badge: 'Network', tone: 'red', meta: `${delay ? `fails after ${formatMs(delay)}` : 'fails at once'}${query}`, method }
     case 'timeout':
-      return { badge: 'Hang', tone: 'grey', meta: `never answers${query}` }
+      return { badge: 'Hang', tone: 'grey', meta: `never answers${query}`, method }
     case 'response':
       return {
         badge: form.status,
         tone: toneForStatus(Number(form.status), true),
         meta: `${bodyLabel(form)} · ${delay ? `waits ${formatMs(delay)}` : 'no delay'}${query}`,
+        method,
       }
   }
 }
 
 export function changedFields(before: FormState, after: FormState): FlashField[] {
   const fields: FlashField[] = []
-  if (before.path !== after.path || before.full !== after.full) fields.push('path')
+  if (
+    before.path !== after.path ||
+    before.full !== after.full ||
+    before.origin !== after.origin ||
+    before.matchOrigin !== after.matchOrigin ||
+    before.method !== after.method ||
+    before.matchMethod !== after.matchMethod
+  ) {
+    fields.push('path')
+  }
   if (before.kind !== after.kind) fields.push('kind')
   if (before.delay !== after.delay) fields.push('delay')
   if (before.status !== after.status) fields.push('status')
   if (before.json !== after.json) fields.push('json')
+  if (before.bodyField !== after.bodyField || before.bodyValue !== after.bodyValue) fields.push('body')
+  if (
+    before.sequenceOn !== after.sequenceOn ||
+    before.firstCalls !== after.firstCalls ||
+    before.laterKind !== after.laterKind ||
+    before.laterStatus !== after.laterStatus ||
+    before.laterJson !== after.laterJson
+  ) {
+    fields.push('sequence')
+  }
   return fields
 }
 

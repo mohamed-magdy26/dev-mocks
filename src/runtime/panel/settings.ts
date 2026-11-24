@@ -23,25 +23,74 @@ export function writeSetting(key: string, value: string): void {
   }
 }
 
+/** `rule` is the form, used to create a rule and to edit one. `active` lists the rules already saved. */
+export type Tab = 'rule' | 'active' | 'requests'
+export const TABS: Tab[] = ['rule', 'active', 'requests']
+export const TAB_LABELS: Record<Tab, string> = { rule: 'Rule', active: 'Active rules', requests: 'Requests' }
+
+/**
+ * The tab the panel opens on. A tab the user already chose this session wins. Otherwise a panel that
+ * has rules opens on the list, so the first thing you see is what is already mocking your app, and a
+ * panel with no rules opens on the form, because an empty list has nothing to show.
+ */
+export function openingTab(saved: string, ruleCount: number): Tab {
+  if (TABS.some((name) => name === saved)) return saved as Tab
+  return ruleCount > 0 ? 'active' : 'rule'
+}
+
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 export const DEFAULT_CORNER: Corner = 'bottom-right'
 
+interface EdgeClasses {
+  tab: string
+  tucked: string
+  stripe: string
+  sliver: string
+  bar: string
+}
+
+/** The ⚙️ tab touches the left or right edge. While the mouse is far away, 6 px of it hides behind that edge. */
 // Do not build these class names from pieces: Tailwind finds a class only when the whole name is written in a file.
-export const FAB_CORNER: Record<Corner, string> = {
-  'top-left': 'top-5 left-5 narrow:top-4 narrow:left-4',
-  'top-right': 'top-5 right-5 narrow:top-4 narrow:right-4',
-  'bottom-left': 'bottom-5 left-5 narrow:bottom-4 narrow:left-4',
-  'bottom-right': 'bottom-5 right-5 narrow:bottom-4 narrow:right-4',
+export const EDGE: Record<Corner, EdgeClasses> = {
+  'top-left': {
+    tab: 'top-edge left-0 rounded-r-tab border-l-0',
+    tucked: 'dm-tuck-left',
+    stripe: 'right-0',
+    sliver: 'top-sliver left-0 justify-start',
+    bar: 'rounded-r-xs',
+  },
+  'top-right': {
+    tab: 'top-edge right-0 rounded-l-tab border-r-0',
+    tucked: 'dm-tuck-right',
+    stripe: 'left-0',
+    sliver: 'top-sliver right-0 justify-end',
+    bar: 'rounded-l-xs',
+  },
+  'bottom-left': {
+    tab: 'bottom-edge left-0 rounded-r-tab border-l-0',
+    tucked: 'dm-tuck-left',
+    stripe: 'right-0',
+    sliver: 'bottom-sliver left-0 justify-start',
+    bar: 'rounded-r-xs',
+  },
+  'bottom-right': {
+    tab: 'bottom-edge right-0 rounded-l-tab border-r-0',
+    tucked: 'dm-tuck-right',
+    stripe: 'left-0',
+    sliver: 'bottom-sliver right-0 justify-end',
+    bar: 'rounded-l-xs',
+  },
 }
 
+/** The panel opens 48 px from the edge, beside the 36 px tab, so it never covers the tab. */
 export const POP_CORNER: Record<Corner, string> = {
-  'top-left': 'top-pop left-5 origin-top-left narrow:top-pop-narrow',
-  'top-right': 'top-pop right-5 origin-top-right narrow:top-pop-narrow',
-  'bottom-left': 'bottom-pop left-5 origin-bottom-left narrow:bottom-pop-narrow',
-  'bottom-right': 'bottom-pop right-5 origin-bottom-right narrow:bottom-pop-narrow',
+  'top-left': 'top-edge left-12 origin-top-left narrow:right-4',
+  'top-right': 'top-edge right-12 origin-top-right narrow:left-4',
+  'bottom-left': 'bottom-edge left-12 origin-bottom-left narrow:right-4',
+  'bottom-right': 'bottom-edge right-12 origin-bottom-right narrow:left-4',
 }
 
-const isCorner = (value: string): value is Corner => Object.keys(FAB_CORNER).includes(value)
+const isCorner = (value: string): value is Corner => Object.keys(EDGE).includes(value)
 
 export function readCorner(): Corner {
   const saved = readSetting(CORNER_KEY)
@@ -77,12 +126,12 @@ export interface Shortcut {
 }
 
 export const DEFAULT_SHORTCUT: Shortcut = {
-  code: 'KeyD',
+  code: 'KeyM',
   alt: true,
   shift: true,
   ctrl: false,
   meta: false,
-  label: 'Alt+Shift+D',
+  label: 'Alt+Shift+M',
 }
 
 type Modifier = 'alt' | 'shift' | 'ctrl' | 'meta'
@@ -97,7 +146,7 @@ const MODIFIERS = new Map<string, Modifier>([
   ['command', 'meta'],
 ])
 
-/** `event.code` names the key's position, so "D" also matches when the keyboard types Arabic or French. */
+/** `event.code` names the key's position, so "M" also matches when the keyboard types Arabic or French. */
 function keyCode(key: string): string {
   if (/^[a-z]$/i.test(key)) return `Key${key.toUpperCase()}`
   if (/^\d$/.test(key)) return `Digit${key}`
@@ -105,7 +154,7 @@ function keyCode(key: string): string {
   return ''
 }
 
-/** Reads text such as "Alt+Shift+D". A shortcut without Alt, Ctrl or Meta would fire while the user types, so it is refused. */
+/** Reads text such as "Alt+Shift+M". A shortcut without Alt, Ctrl or Meta would fire while the user types, so it is refused. */
 export function parseShortcut(text: string): Shortcut | undefined {
   const parts = text.split('+').map((part) => part.trim())
   const key = parts.pop() ?? ''
@@ -127,7 +176,7 @@ export function toShortcut(text: string | undefined): Shortcut {
   const parsed = parseShortcut(text)
   if (parsed) return parsed
   console.warn(
-    `[dev-mocks] The shortcut "${text}" is not valid, so ${DEFAULT_SHORTCUT.label} is used. Write modifiers and one letter, digit or F-key, for example "Ctrl+Alt+M".`,
+    `[dev-mocks] The shortcut "${text}" is not valid, so ${DEFAULT_SHORTCUT.label} is used. Write modifiers and one letter, digit or F-key, for example "Ctrl+Alt+K".`,
   )
   return DEFAULT_SHORTCUT
 }
@@ -148,15 +197,15 @@ export function matchesShortcut(event: KeyState, shortcut: Shortcut): boolean {
   )
 }
 
-/** While the button is hidden, a dot shows whenever there are rules: lime while they answer requests, amber while paused. */
-export const showsDot = (state: { count: number }) => state.count > 0
-
-export const ruleStatus = (count: number, paused: boolean) => `${plural(count, 'rule')} ${paused ? 'paused' : 'active'}`
+export function ruleStatus(count: number, paused: boolean): string {
+  if (count === 0) return '0 rules'
+  return `${plural(count, 'rule')} ${paused ? 'paused' : 'active'}`
+}
 
 /** The console line printed on page load while the button is hidden, so a developer can always find the way back. */
 export function hiddenNotice(state: { hidden: boolean; paused: boolean; count: number }, shortcut: Shortcut): string | undefined {
   if (!state.hidden) return undefined
   const way = `Press ${shortcut.label} to show it.`
-  if (!showsDot(state)) return `[dev-mocks] Panel hidden. ${way}`
+  if (state.count === 0) return `[dev-mocks] Panel hidden. ${way}`
   return `[dev-mocks] ${ruleStatus(state.count, state.paused)}, panel hidden. ${way}`
 }

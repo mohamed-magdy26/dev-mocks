@@ -30,7 +30,8 @@ import {
 import { CloseIcon, EyeOffIcon, MoveIcon, PulseIcon } from './icons.js'
 import { Launcher } from './Launcher.js'
 import { RequestsTab } from './RequestsTab.js'
-import { RulesTab } from './RulesTab.js'
+import { ActiveRulesTab } from './ActiveRulesTab.js'
+import { RuleTab } from './RuleTab.js'
 import { readSession, takeSession, writeSession } from './session.js'
 import {
   CORNER_KEY,
@@ -39,19 +40,19 @@ import {
   NEXT_CORNER,
   OFF_FLAG,
   ON_FLAG,
+  openingTab,
   POP_CORNER,
   readCorner,
   readSetting,
   ruleStatus,
-  showsDot,
+  TAB_LABELS,
+  TABS,
   writeSetting,
   type Corner,
   type Shortcut,
+  type Tab,
 } from './settings.js'
 
-type Tab = 'rules' | 'requests'
-const TABS: Tab[] = ['rules', 'requests']
-const TAB_LABELS: Record<Tab, string> = { rules: 'Rules', requests: 'Requests' }
 const SHORTCUT = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ ↵' : 'Ctrl ↵'
 // Read once per page load: the notice is written just before a reload and shown once after it.
 const notice = takeSession('notice')
@@ -89,10 +90,9 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
   const [corner, setCorner] = useState<Corner>(readCorner)
   const [focusLauncher, setFocusLauncher] = useState(false)
   const [focusSwitch, setFocusSwitch] = useState(focusSwitchOnLoad)
-  const [announcement, setAnnouncement] = useState('')
   const [open, setOpen] = useState(() => !hidden && readSession('open') === OPEN_FLAG)
-  const [tab, setTab] = useState<Tab>(() => (readSession('tab') === 'requests' ? 'requests' : 'rules'))
   const [rules] = useState<MockConfig[]>(() => errorController.getAllConfigs())
+  const [tab, setTab] = useState<Tab>(() => openingTab(readSession('tab'), rules.length))
   const [paused] = useState(() => errorController.isPaused())
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [editing, setEditing] = useState<number | null>(null)
@@ -104,15 +104,15 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
   const [note, setNote] = useState<Note | null>(null)
   const fabRef = useRef<HTMLButtonElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({ rules: null, requests: null })
+  const rootRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({ rule: null, active: null, requests: null })
 
   const jsonCheck = useMemo(() => checkJson(form.json), [form.json])
   const problem = findProblem(form, jsonCheck)
   // A note lasts only until the next edit, so it is shown before the problem, which the fields also show.
   const footer = note ?? problem
   const count = rules.length
-  let status = 'No active rules'
-  if (count > 0) status = ruleStatus(count, paused)
+  const status = ruleStatus(count, paused)
 
   useEffect(() => {
     if (!toast || toastHeld) return
@@ -129,7 +129,6 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
 
   const changeHidden = useCallback((next: boolean) => {
     setHidden(next)
-    setAnnouncement('')
     writeSetting(HIDDEN_KEY, next ? ON_FLAG : OFF_FLAG)
     if (!next) return
     setOpen(false)
@@ -141,7 +140,8 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.repeat || !matchesShortcut(event, shortcut)) return
       event.preventDefault()
-      setFocusLauncher(false)
+      const root = rootRef.current?.getRootNode()
+      setFocusLauncher(root instanceof ShadowRoot && root.activeElement !== null)
       changeHidden(!hidden)
     }
     // Capture phase: a host editor that stops the key event would otherwise swallow the shortcut.
@@ -156,11 +156,7 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
 
   function hideButton() {
     changeHidden(true)
-    if (showsDot({ count })) {
-      setFocusLauncher(true)
-      return
-    }
-    setAnnouncement(`Dev mocks button hidden. Press ${shortcut.label} to show it.`)
+    setFocusLauncher(true)
   }
 
   function moveTo(next: Corner) {
@@ -186,12 +182,18 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
     writeSession('open', OPEN_FLAG)
   }
 
-  function changeTab(next: Tab, focus = false) {
+  /**
+   * Moves to another tab and says where the keyboard lands. `focus.tab` puts it on the tab button,
+   * which the arrow keys need; `focus.presets` puts it on the first preset card, which picking a
+   * request needs. Both default to off, so every caller states its own target in one call and no
+   * later call can quietly undo an earlier one.
+   */
+  function changeTab(next: Tab, focus: { tab?: boolean; presets?: boolean } = {}) {
     setTab(next)
     writeSession('tab', next)
-    setFocusPresets(false)
+    setFocusPresets(Boolean(focus.presets))
     bodyRef.current?.scrollTo({ top: 0 })
-    if (focus) tabRefs.current[next]?.focus()
+    if (focus.tab) tabRefs.current[next]?.focus()
   }
 
   function updateForm(next: FormState, withFlash = true) {
@@ -207,11 +209,17 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
     setForm(EMPTY_FORM)
   }
 
+  /** Loads a rule into the form. The caller moves to the Rule tab, which holds the fields that edit it. */
   function startEdit(index: number) {
     setEditing(index)
     setPendingQuery('')
     updateForm(ruleToForm(rules[index]))
-    bodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  /** Pressing Edit in the Active rules list loads the rule and moves to the tab that can edit it. */
+  function editFromList(index: number) {
+    startEdit(index)
+    changeTab('rule')
   }
 
   function reloadWith(text: string) {
@@ -222,7 +230,7 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
   function save() {
     if (problem) return
     const rule = formToRule(form)
-    if (!errorController.addConfig(rule, editing === null ? [] : rules[editing].endpoints)) {
+    if (!errorController.addConfig(rule, editing === null ? undefined : rules[editing])) {
       setNote({ text: refusedSaveText(rule), warn: true })
       return
     }
@@ -230,7 +238,7 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
   }
 
   function remove(index: number) {
-    if (!errorController.removeConfig(rules[index].endpoints)) {
+    if (!errorController.removeConfig(rules[index])) {
       setNote({ text: REFUSED_CHANGE_TEXT, warn: true })
       return
     }
@@ -255,20 +263,19 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
   }
 
   function pickRequest(request: LoggedRequest) {
-    changeTab('rules')
-    setFocusPresets(true)
     // A disabled or delay-only rule still matches, but the real server answered, so only a mocked request opens its rule.
     const index = request.tag !== 'mocked' ? NOT_FOUND : rules.findIndex((rule) => ruleKey(rule) === request.rule)
     if (index !== NOT_FOUND) {
       startEdit(index)
       setNote({ text: RULE_ANSWERED_TEXT, warn: false })
-      return
+    } else {
+      const picked = requestToForm(form, request, requestLog.body(request.id))
+      setEditing(null)
+      updateForm(picked.form)
+      if (picked.note) setNote({ text: picked.note, warn: false })
+      setPendingQuery(new URL(request.url).search)
     }
-    const picked = requestToForm(form, request, requestLog.body(request.id))
-    setEditing(null)
-    updateForm(picked.form)
-    if (picked.note) setNote({ text: picked.note, warn: false })
-    setPendingQuery(new URL(request.url).search)
+    changeTab('rule', { presets: true })
   }
 
   function onPopoverKeyDown(event: KeyboardEvent<HTMLElement>) {
@@ -276,7 +283,7 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
       close()
       return
     }
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && tab === 'rules') {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && tab === 'rule') {
       event.preventDefault()
       save()
     }
@@ -285,16 +292,19 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
   function onTabsKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const current = TABS.indexOf(tab)
     let next = current
-    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') next = (current + 1) % TABS.length
+    // Each arrow goes its own way and wraps round. With two tabs either arrow swapped them, so this
+    // only started to matter once a third tab existed.
+    if (event.key === 'ArrowRight') next = (current + 1) % TABS.length
+    else if (event.key === 'ArrowLeft') next = (current - 1 + TABS.length) % TABS.length
     else if (event.key === 'Home') next = 0
     else if (event.key === 'End') next = TABS.length - 1
     else return
     event.preventDefault()
-    changeTab(TABS[next], true)
+    changeTab(TABS[next], { tab: true })
   }
 
   return (
-    <div className="font-ui text-base text-ink">
+    <div ref={rootRef} className="font-ui text-base text-ink">
       <Launcher
         buttonRef={fabRef}
         open={open}
@@ -319,7 +329,7 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
           onDrop={preventFileDrop}
           className={clsx(
             POP_CORNER[corner],
-            'fixed z-top flex h-pop w-pop animate-pop-in flex-col overflow-hidden rounded-pop border border-line bg-panel shadow-pop narrow:left-4 narrow:right-4 narrow:h-pop-narrow narrow:w-auto',
+            'fixed z-top flex h-pop w-pop animate-pop-in flex-col overflow-hidden rounded-pop border border-line bg-panel shadow-pop narrow:h-pop-narrow narrow:w-auto',
           )}
         >
           <header className="dm-head relative flex items-center justify-between gap-3 py-3.5 pl-4 pr-3">
@@ -413,29 +423,29 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
               >
                 {name === 'requests' && <span aria-hidden="true" className="h-1.5 w-1.5 animate-rec rounded-full bg-red" />}
                 {TAB_LABELS[name]}
-                <span
-                  className={clsx('rounded-full border bg-raised px-1.5 py-0.5 font-mono text-tiny font-semibold', {
-                    'border-line-strong text-ink': tab === name,
-                    'border-line text-dim': tab !== name,
-                  })}
-                >
-                  {name === 'rules' ? count : <RequestCount />}
-                </span>
+                {/* The Rule tab holds one rule, so it has nothing to count. */}
+                {name !== 'rule' && (
+                  <span
+                    className={clsx('rounded-full border bg-raised px-1.5 py-0.5 font-mono text-tiny font-semibold', {
+                      'border-line-strong text-ink': tab === name,
+                      'border-line text-dim': tab !== name,
+                    })}
+                  >
+                    {name === 'active' ? count : <RequestCount />}
+                  </span>
+                )}
               </button>
             ))}
           </div>
 
           <div ref={bodyRef} className="dm-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {tab === 'rules' ? (
+            {tab === 'rule' && (
               <FlashContext.Provider value={flash}>
-                <RulesTab
+                <RuleTab
                   form={form}
                   onChange={updateForm}
                   rules={rules}
                   editing={editing}
-                  onEdit={startEdit}
-                  onRemove={remove}
-                  onClearAll={clearAll}
                   onCancelEdit={resetForm}
                   pendingQuery={pendingQuery}
                   onPendingQueryChange={setPendingQuery}
@@ -443,12 +453,21 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
                   paused={paused}
                 />
               </FlashContext.Provider>
-            ) : (
-              <RequestsTab onPick={pickRequest} onClear={requestLog.clear} />
             )}
+            {tab === 'active' && (
+              <ActiveRulesTab
+                rules={rules}
+                editing={editing}
+                onEdit={editFromList}
+                onRemove={remove}
+                onClearAll={clearAll}
+                paused={paused}
+              />
+            )}
+            {tab === 'requests' && <RequestsTab onPick={pickRequest} onClear={requestLog.clear} />}
           </div>
 
-          {tab === 'rules' && (
+          {tab === 'rule' && (
             <footer className="flex items-center justify-between gap-3 border-t border-line bg-raised py-3 pl-4 pr-3.5">
               <p aria-live="polite" className={clsx('m-0 text-note', { 'text-amber': footer?.warn, 'text-faint': !footer?.warn })}>
                 {footer?.text ??
@@ -475,8 +494,9 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
             className={clsx(
               'absolute left-1/2 z-10 flex w-max max-w-toast -translate-x-1/2 items-center gap-2.5 rounded-xl border border-line-strong bg-toast py-2 pl-3 pr-2.5 text-body text-ink shadow-toast transition duration-200 ease-dm',
               {
-                'bottom-toast': tab === 'rules',
-                'bottom-3.5': tab === 'requests',
+                // The Rule tab is the only one with a footer, so only there does the toast sit above it.
+                'bottom-toast': tab === 'rule',
+                'bottom-3.5': tab !== 'rule',
                 'pointer-events-auto opacity-100': toast !== null,
                 'pointer-events-none translate-y-2 opacity-0': toast === null,
               },
@@ -499,10 +519,6 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
           </div>
         </section>
       )}
-
-      <p role="status" className="sr-only">
-        {announcement}
-      </p>
     </div>
   )
 }

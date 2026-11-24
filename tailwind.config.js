@@ -54,16 +54,18 @@ export default {
       lg: '8px',
       xl: '10px',
       pop: '16px',
+      tab: '12px',
       full: '9999px',
     },
     extend: {
-      width: { pop: 'min(480px, calc(100vw - 32px))', delay: '116px', status: '72px' },
+      width: { pop: 'min(480px, calc(100% - 64px))', delay: '116px', status: '72px' },
       height: { pop: 'min(680px, calc(100vh - 100px))', 'pop-narrow': 'min(680px, calc(100vh - 92px))' },
       maxHeight: { menu: '320px' },
       minHeight: { json: '132px' },
       minWidth: { badge: '54px' },
       maxWidth: { toast: 'calc(100% - 28px)' },
-      inset: { pop: '76px', 'pop-narrow': '72px', toast: '74px' },
+      // 84 px puts the middle of the 44 px hidden-button bar at the middle of the 68 px tab, which sits 72 px from the edge.
+      inset: { edge: '72px', sliver: '84px', toast: '74px' },
       translate: { 'drag-x': 'var(--dm-drag-x)', 'drag-y': 'var(--dm-drag-y)' },
       zIndex: { top: '2147483000' },
       letterSpacing: { label: '0.06em' },
@@ -79,11 +81,12 @@ export default {
         live: '0 0 0 3px var(--dm-accent-soft)',
         'ring-tone': 'inset 0 0 0 1px var(--tone)',
         'ring-accent': 'inset 0 0 0 1px var(--dm-accent)',
+        'ring-amber': 'inset 0 0 0 1px var(--dm-amber)',
         'focus-halo': '0 0 0 6px var(--dm-bg)',
       },
       transitionTimingFunction: { dm: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
-      // No transform: animating it would slide a dropped button in from where the drag offset pointed.
-      transitionProperty: { fab: 'opacity, border-color' },
+      // No transform: animating it would slide a dropped button in from where the drag offset pointed. translate animates the 6 px tuck.
+      transitionProperty: { fab: 'opacity, border-color, translate', size: 'width, height' },
       keyframes: {
         'pop-in': { from: { opacity: '0', transform: 'translateY(10px) scale(0.97)' } },
         flash: {

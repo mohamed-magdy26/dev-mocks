@@ -1,5 +1,26 @@
 import { delay, http, HttpResponse, isCommonAssetRequest, type JsonBodyType } from 'msw'
-import { errorController } from './controller.js'
+import { errorController, ruleKey } from './controller.js'
+// Type-only, so no module loads the other at runtime and the two files stay free of a cycle.
+import type { RequestTag } from './requests.js'
+
+/** Which rule answered one request, and what it did. */
+export interface Decision {
+  tag: RequestTag
+  rule: string
+}
+
+/**
+ * What really happened to one request, by request id. Only the handler knows: the Requests tab
+ * labels a row before the body is read, so its guess can name the wrong rule, or no rule at all.
+ */
+const decisions = new Map<string, Decision>()
+
+/** Reads and forgets one request's real outcome. Undefined means no rule answered and none delayed. */
+export function takeDecision(id: string): Decision | undefined {
+  const decision = decisions.get(id)
+  decisions.delete(id)
+  return decision
+}
 
 const DEFAULT_BODIES: Record<number, JsonBodyType> = {
   500: { message: 'Internal Server Error', code: 'SERVER_ERROR' },
@@ -29,21 +50,36 @@ function respond(status: number, body: JsonBodyType | undefined) {
   return HttpResponse.json(body === undefined ? defaultBody(status) : body, { status })
 }
 
-async function handleRequest(request: Request) {
+/**
+ * Decides one request's answer and records what it really did under `requestId`. Exported because it
+ * is the unit: the handler below is a one-line adapter that only unpacks MSW's resolver argument.
+ */
+export async function handleRequest(request: Request, requestId: string) {
   if (isAppAsset(request)) return undefined
-  const config = errorController.getConfigForRequest(request)
-  if (!config || config.scenario === 'none') return undefined
+  // Reading a clone leaves `request.bodyUsed` false, so a request that goes on to the real server
+  // still carries its body. A request with no body reads as '', which no body condition matches.
+  // Asked only when some rule has a body condition, so an upload is not buffered for nothing.
+  const body = request.body === null || !errorController.wantsBody() ? '' : await request.clone().text()
+  const config = errorController.getConfigForRequest(request, body)
+  if (!config) return undefined
+  // A rule that answers in sequence gives a different answer once its first calls are used up, so
+  // everything below reads the answer, never the rule.
+  const answer = errorController.answerFor(config)
+  if (answer.scenario === 'none') return undefined
+  // A delay-only answer waits and then lets the real server reply, so the row is 'delayed', not 'mocked'.
+  const tag = answer.scenario === 'slow' && answer.customResponse === undefined ? 'delayed' : 'mocked'
+  decisions.set(requestId, { tag, rule: ruleKey(config) })
 
-  if (config.delayMs) {
-    await delay(config.delayMs)
+  if (answer.delayMs) {
+    await delay(answer.delayMs)
   }
 
-  switch (config.scenario) {
+  switch (answer.scenario) {
     case '500':
     case '404':
     case '401':
     case '403':
-      return respond(config.customStatusCode || Number(config.scenario), config.customResponse)
+      return respond(answer.customStatusCode || Number(answer.scenario), answer.customResponse)
 
     case 'network':
       return HttpResponse.error()
@@ -54,18 +90,18 @@ async function handleRequest(request: Request) {
       return undefined
 
     case 'slow':
-      if (!config.delayMs) {
+      if (!answer.delayMs) {
         await delay(3000)
       }
       // Returning undefined makes MSW send the real request once the wait is over.
-      return config.customResponse === undefined ? undefined : respond(200, config.customResponse)
+      return answer.customResponse === undefined ? undefined : respond(200, answer.customResponse)
 
     case 'custom':
-      return respond(config.customStatusCode || 200, config.customResponse)
+      return respond(answer.customStatusCode || 200, answer.customResponse)
 
     default:
       return undefined
   }
 }
 
-export const handlers = [http.all('*', ({ request }) => handleRequest(request))]
+export const handlers = [http.all('*', ({ request, requestId }) => handleRequest(request, requestId))]

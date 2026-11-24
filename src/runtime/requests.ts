@@ -1,5 +1,5 @@
-import { errorController, MEGABYTE, type MockConfig } from './controller.js'
-import { NULL_BODY_STATUSES } from './handlers.js'
+import { errorController, MEGABYTE, ruleKey, type MockConfig } from './controller.js'
+import { NULL_BODY_STATUSES, takeDecision } from './handlers.js'
 
 const STORAGE_KEY = 'dev-mocks:requests'
 const LIMIT = 100
@@ -23,12 +23,12 @@ export interface LoggedRequest {
   status: RequestStatus
   startedAt: number
   ms?: number
-  /** The endpoints of the rule that matched, joined with ", ". */
+  /** The key of the rule that matched: its method, origin and paths. */
   rule?: string
   tag?: RequestTag
 }
 
-export const ruleKey = (rule: MockConfig) => rule.endpoints.join(', ')
+export { ruleKey }
 
 /** A disabled rule ('none') sends the request to the real server, so the request gets no tag. */
 export function ruleTag(rule: MockConfig): RequestTag | undefined {
@@ -157,10 +157,28 @@ export const requestLog = {
     commit(next.slice(0, LIMIT))
   },
 
-  finish(id: string, response: Response) {
-    if (!entries.some((entry) => entry.id === id)) return
+  /**
+   * Corrects the label `start()` guessed. `mocked` is what MSW really did, because it raises
+   * `response:mocked` and `response:bypass` as two different events; when it bypassed, the handler
+   * says whether a rule still delayed the request. The guess has to be corrected because a rule with
+   * a body condition cannot be judged before the body is read, and a wrong guess would otherwise
+   * leave the row claiming a rule that never answered it.
+   */
+  finish(id: string, response: Response, mocked: boolean) {
+    const found = entries.find((entry) => entry.id === id)
+    if (!found) return
     const status = response.type === 'error' || response.status === 0 ? 'failed' : response.status
-    commit(entries.map((entry) => (entry.id === id ? { ...entry, status, ms: Date.now() - entry.startedAt } : entry)))
+    // The handler names the rule that really answered. start()'s guess runs before the body is read,
+    // so on a path holding two body conditions it names whichever rule was saved last.
+    const decision = takeDecision(id)
+    const tag = mocked ? (decision?.tag ?? 'mocked') : decision?.tag
+    const rule = tag === undefined ? undefined : (decision?.rule ?? found.rule)
+    const fixed: Partial<LoggedRequest> = tag === found.tag && rule === found.rule ? {} : { tag, rule }
+    commit(
+      entries.map((entry) =>
+        entry.id === id ? { ...entry, ...fixed, status, ms: Date.now() - entry.startedAt } : entry,
+      ),
+    )
   },
 
   /** Keeps the JSON body of a recorded request, so the panel can copy it into a rule. Until the read ends, the body is 'reading'. */

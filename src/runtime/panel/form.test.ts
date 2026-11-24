@@ -13,6 +13,7 @@ import {
   isPresetActive,
   jsonFileProblem,
   lastToken,
+  liftPastedOrigin,
   loadedJson,
   MISSING_BODY_TEXT,
   pathParts,
@@ -52,13 +53,137 @@ describe('formToRule', () => {
   it('drops the JSON for status 204, which cannot have a body', () => {
     expect(formToRule(form({ status: '204', json: '{"a":1}' })).customResponse).toBeUndefined()
   })
+
+  it('saves the origin and the switch from the form', () => {
+    const rule = formToRule({ ...EMPTY_FORM, path: '/v1/orders', origin: 'https://eu.api.test', matchOrigin: true })
+    expect(rule.origin).toBe('https://eu.api.test')
+    expect(rule.matchOrigin).toBe(true)
+  })
+
+  it('leaves both fields off a rule with no origin', () => {
+    const rule = formToRule({ ...EMPTY_FORM, path: '/v1/orders', matchOrigin: true })
+    expect(rule.origin).toBeUndefined()
+    expect(rule.matchOrigin).toBeUndefined()
+  })
+
+  it('opens a saved origin back into the form', () => {
+    const form = ruleToForm({ scenario: '500', endpoints: ['/v1/orders'], origin: 'https://eu.api.test', matchOrigin: true })
+    expect(form.origin).toBe('https://eu.api.test')
+    expect(form.matchOrigin).toBe(true)
+  })
+})
+
+describe('the method, the sequence and the body condition', () => {
+  it('upper cases the method, and only the switch decides whether the rule enforces it', () => {
+    expect(formToRule(form({ method: 'post', matchMethod: true })).method).toBe('POST')
+    expect(formToRule(form({ method: 'post', matchMethod: true })).matchMethod).toBe(true)
+    expect(formToRule(form({ method: '', matchMethod: true })).matchMethod).toBeUndefined()
+  })
+
+  it('keeps the method text while the switch is off, so turning it back on needs no second visit to the Requests tab', () => {
+    const off = formToRule(form({ path: '/api/orders', method: 'POST', matchMethod: false }))
+    expect(off.method).toBe('POST')
+    expect(off.matchMethod).toBeUndefined()
+    const reopened = ruleToForm(off)
+    expect(reopened).toMatchObject({ method: 'POST', matchMethod: false })
+    expect(formToRule({ ...reopened, matchMethod: true }).matchMethod).toBe(true)
+  })
+
+  it('keeps the method on a rule holding several paths, unlike the origin', () => {
+    const rule = formToRule(form({ path: '/a, /b', method: 'POST', matchMethod: true, origin: 'https://api.test', matchOrigin: true }))
+    expect(rule.method).toBe('POST')
+    expect(rule.matchOrigin).toBeUndefined()
+  })
+
+  it('saves the call count and the later answer together, or neither', () => {
+    const rule = formToRule(form({ sequenceOn: true, firstCalls: '2', laterKind: 'response', laterStatus: '500', laterJson: '' }))
+    expect(rule.firstCalls).toBe(2)
+    expect(rule.later).toEqual({ scenario: 'custom', customStatusCode: 500, customResponse: undefined })
+    const plain = formToRule(form({ firstCalls: '' }))
+    expect(plain.firstCalls).toBeUndefined()
+    expect(plain.later).toBeUndefined()
+  })
+
+  it('refuses an empty count box while the switch is on, instead of silently saving no sequence', () => {
+    const clearing = form({ sequenceOn: true, firstCalls: '' })
+    expect(findProblem(clearing)?.text).toContain('or more')
+    expect(formToRule(clearing).firstCalls).toBeUndefined()
+  })
+
+  it('saves a later step of "the real server" as the scenario that passes the request through', () => {
+    expect(formToRule(form({ sequenceOn: true, firstCalls: '1', laterKind: 'real' })).later).toEqual({ scenario: 'none' })
+  })
+
+  it('saves the body condition only when both halves are filled in', () => {
+    expect(formToRule(form({ bodyField: ' coupon ', bodyValue: 'EXPIRED' })).bodyMatch).toEqual({
+      field: 'coupon',
+      value: 'EXPIRED',
+    })
+    expect(formToRule(form({ bodyField: 'coupon', bodyValue: '  EXPIRED  ' })).bodyMatch?.value).toBe('EXPIRED')
+    expect(formToRule(form({ bodyField: 'coupon', bodyValue: '   ' })).bodyMatch).toBeUndefined()
+    expect(formToRule(form({ bodyField: 'coupon', bodyValue: '' })).bodyMatch).toBeUndefined()
+    expect(formToRule(form({ bodyField: '', bodyValue: 'EXPIRED' })).bodyMatch).toBeUndefined()
+  })
+
+  it('opens a saved rule with all three back into the same form', () => {
+    const saved = formToRule(
+      form({
+        path: '/api/orders',
+        method: 'POST',
+        matchMethod: true,
+        sequenceOn: true,
+        firstCalls: '3',
+        laterKind: 'response',
+        laterStatus: '503',
+        laterJson: '{"down":true}',
+        bodyField: 'user.role',
+        bodyValue: 'admin',
+      }),
+    )
+    const reopened = ruleToForm(saved)
+    expect(reopened).toMatchObject({
+      method: 'POST',
+      matchMethod: true,
+      sequenceOn: true,
+      firstCalls: '3',
+      laterKind: 'response',
+      laterStatus: '503',
+      bodyField: 'user.role',
+      bodyValue: 'admin',
+    })
+    expect(formToRule(reopened)).toEqual(saved)
+  })
+
+  it('refuses a call count below 1, and a body field with no value', () => {
+    expect(findProblem(form({ sequenceOn: true, firstCalls: '0' }))?.text).toContain('1 or more')
+    expect(findProblem(form({ bodyField: 'coupon', bodyValue: '' }))?.text).toContain('value the body must carry')
+    expect(findProblem(form({ bodyField: '', bodyValue: 'EXPIRED' }))?.text).toContain('body field to look in')
+    expect(findProblem(form({ sequenceOn: true, firstCalls: '2', laterKind: 'response', laterStatus: '500', laterJson: '{' }))?.text).toContain(
+      'JSON of the later calls',
+    )
+  })
+
+  it('says in the rules list what changes after the first calls, and what the body must carry', () => {
+    const rule = formToRule(form({ sequenceOn: true, firstCalls: '1', laterStatus: '500', bodyField: 'coupon', bodyValue: 'EXPIRED' }))
+    expect(describeRule(rule).meta).toContain('body coupon = EXPIRED')
+    expect(describeRule(rule).meta).toContain('first 1 call, then 500')
+    expect(describeRule(formToRule(form({ sequenceOn: true, firstCalls: '2', laterKind: 'real' }))).meta).toContain(
+      'first 2 calls, then the real server',
+    )
+  })
+
+  it('names the method in the rules list, and says ANY when the rule answers them all', () => {
+    expect(describeRule(formToRule(form({ method: 'POST', matchMethod: true }))).method).toBe('POST')
+    expect(describeRule(formToRule(form({}))).method).toBe('ANY')
+    expect(describeRule(formToRule(form({ method: 'POST', matchMethod: false }))).method).toBe('ANY')
+  })
 })
 
 describe('ruleToForm', () => {
   it('opens a saved slow rule that has a body as a 200 response with the same delay', () => {
     expect(ruleToForm({ scenario: 'slow', endpoints: ['/a', '/b'], delayMs: 2000, customResponse: { data: [] } })).toEqual({
+      ...EMPTY_FORM,
       path: '/a, /b',
-      full: false,
       kind: 'response',
       status: '200',
       json: '{\n  "data": []\n}',
@@ -113,7 +238,7 @@ describe('describeRule', () => {
         delayMs: 9969,
         matchFullUrl: false,
       }),
-    ).toEqual({ badge: 'Delay', tone: 'blue', meta: 'waits 9.97 s · real response' })
+    ).toEqual({ badge: 'Delay', tone: 'blue', meta: 'waits 9.97 s · real response', method: 'ANY' })
   })
 
   it('describes a 204 response that must match the query', () => {
@@ -121,6 +246,7 @@ describe('describeRule', () => {
       badge: '204',
       tone: 'lime',
       meta: 'no body · no delay · query must match',
+      method: 'ANY',
     })
   })
 })
@@ -217,14 +343,14 @@ describe('requestToForm', () => {
 
   it('copies the real status and the formatted body', () => {
     expect(requestToForm(EMPTY_FORM, logged(201), { json: '{"id":7}' })).toEqual({
-      form: { ...EMPTY_FORM, path: '/api/menu', status: '201', json: '{\n  "id": 7\n}' },
+      form: { ...EMPTY_FORM, path: '/api/menu', origin: 'https://api.test', matchOrigin: true, method: 'GET', matchMethod: true, status: '201', json: '{\n  "id": 7\n}' },
       note: COPIED_TEXT,
     })
   })
 
   it('fills only the path, and says why, when the body is missing or does not parse', () => {
     expect(requestToForm(EMPTY_FORM, logged(200), { missing: 'reading' })).toEqual({
-      form: { ...EMPTY_FORM, path: '/api/menu' },
+      form: { ...EMPTY_FORM, path: '/api/menu', origin: 'https://api.test', matchOrigin: true, method: 'GET', matchMethod: true },
       note: MISSING_BODY_TEXT.reading,
     })
     expect(requestToForm(EMPTY_FORM, logged(200), { json: '{' }).note).toBe(MISSING_BODY_TEXT['not-json'])
@@ -232,7 +358,7 @@ describe('requestToForm', () => {
 
   it('fills only the path, with no note, for a request that never got an answer', () => {
     expect(requestToForm(EMPTY_FORM, logged('pending'), { missing: 'reading' })).toEqual({
-      form: { ...EMPTY_FORM, path: '/api/menu' },
+      form: { ...EMPTY_FORM, path: '/api/menu', origin: 'https://api.test', matchOrigin: true, method: 'GET', matchMethod: true },
       note: '',
     })
   })
@@ -265,5 +391,82 @@ describe('JSON files and saving', () => {
     expect(findProblem(broken, checkJson(broken.json))?.text).toBe('Fix the JSON first.')
     expect(parse).toHaveBeenCalledTimes(1)
     parse.mockRestore()
+  })
+})
+
+describe('liftPastedOrigin', () => {
+  it('splits a pasted full URL into the origin line and the path field', () => {
+    expect(liftPastedOrigin({ ...EMPTY_FORM, path: 'https://eu.api.test/v1/orders?page=2' })).toMatchObject({
+      path: '/v1/orders?page=2',
+      origin: 'https://eu.api.test',
+      matchOrigin: true,
+    })
+  })
+
+  it('keeps the port, lowercases the host, and leaves the spelling of the path alone', () => {
+    expect(liftPastedOrigin({ ...EMPTY_FORM, path: 'HTTP://LOCALHOST:5173/v1/Orders' })).toMatchObject({
+      path: '/v1/Orders',
+      origin: 'http://localhost:5173',
+    })
+  })
+
+  it('drops a #fragment, which no request ever sends', () => {
+    expect(liftPastedOrigin({ ...EMPTY_FORM, path: 'https://api.test/v1/orders#top' })?.path).toBe('/v1/orders')
+  })
+
+  it('leaves a plain path alone', () => {
+    expect(liftPastedOrigin({ ...EMPTY_FORM, path: '/v1/orders' })).toBeUndefined()
+  })
+
+  it('leaves two paths alone, because one origin cannot speak for both', () => {
+    expect(liftPastedOrigin({ ...EMPTY_FORM, path: '/v1/items, https://eu.api.test/v1/orders' })).toBeUndefined()
+  })
+
+  it('keeps the text when the paste is not a URL after all, so the save can report it', () => {
+    expect(liftPastedOrigin({ ...EMPTY_FORM, path: 'http://' })).toBeUndefined()
+  })
+
+  it('does nothing on a second blur, after the origin has already been lifted', () => {
+    const once = liftPastedOrigin({ ...EMPTY_FORM, path: 'https://eu.api.test/v1/orders' })
+    expect(once).toBeDefined()
+    expect(liftPastedOrigin(once!)).toBeUndefined()
+  })
+})
+
+describe('an origin a rule cannot promise', () => {
+  it('stops enforcing one origin once the rule holds a second path', () => {
+    const rule = formToRule({
+      ...EMPTY_FORM,
+      kind: 'timeout',
+      path: '/v1/orders, /v1/items',
+      origin: 'https://eu.api.test',
+      matchOrigin: true,
+    })
+    expect(rule.matchOrigin).toBeUndefined()
+  })
+
+  it('keeps a rule saved before the origin field existed free of an origin after an edit', () => {
+    const old = { scenario: '500' as const, endpoints: ['/v1/orders'], matchFullUrl: false }
+    const again = formToRule({ ...ruleToForm(old), status: '503' })
+    expect(JSON.stringify(again)).not.toContain('origin')
+  })
+
+  it('describes a rule whose stored origin is not a URL, instead of blanking the rules list', () => {
+    expect(describeRule({ scenario: '500', endpoints: ['/v1/orders'], origin: 'eu.api.test', matchOrigin: true }).meta).toContain(
+      'eu.api.test only',
+    )
+  })
+
+  it('names the host of an origin-pinned rule, and keeps the port when there is one', () => {
+    expect(describeRule({ scenario: '500', endpoints: ['/v1/orders'], origin: 'https://eu.api.test', matchOrigin: true }).meta).toContain(
+      'eu.api.test only',
+    )
+    expect(describeRule({ scenario: '500', endpoints: ['/v1/orders'], origin: 'http://localhost:5173', matchOrigin: true }).meta).toContain(
+      'localhost:5173 only',
+    )
+  })
+
+  it('says nothing about an origin the rule does not enforce', () => {
+    expect(describeRule({ scenario: '500', endpoints: ['/v1/orders'], origin: 'https://eu.api.test' }).meta).not.toContain('only')
   })
 })

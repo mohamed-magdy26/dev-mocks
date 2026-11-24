@@ -80,21 +80,44 @@ mark { padding: 0 1px; border-radius: 2px; background: rgb(197 241 92 / 0.25); c
 .dm-switch:checked + .dm-switch-track { background: var(--dm-accent); }
 .dm-switch:checked + .dm-switch-track::after { transform: translateX(12px); background: var(--dm-accent-ink); }
 .dm-switch:focus-visible + .dm-switch-track { outline: 2px solid var(--dm-accent); outline-offset: 2px; }
+/* Without this a switch that cannot be used looks exactly like one that is simply off. */
+.dm-switch[aria-disabled="true"] + .dm-switch-track { opacity: 0.45; }
+.dm-switch[aria-disabled="true"] + .dm-switch-track::after { background: var(--dm-faint); }
 
 .dm-check { display: grid; place-items: center; width: 15px; height: 15px; margin: 0; border: 1px solid var(--dm-control); border-radius: 4px; background: var(--dm-sunken); appearance: none; cursor: pointer; }
 .dm-check:checked { border-color: var(--dm-accent); background: var(--dm-accent); }
 .dm-check:checked::after { content: ""; width: 8px; height: 4px; border: 2px solid var(--dm-accent-ink); border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
 .dm-check:focus-visible { outline: 2px solid var(--dm-accent); outline-offset: 2px; }
 
-/* Windows High Contrast replaces every background, which would hide the switch track and the hidden-button dot. */
+/* The 6 px tuck uses the separate translate property, so it neither runs layout nor fights the drag's transform. */
+.dm-tuck-left { translate: -6px 0; }
+.dm-tuck-right { translate: 6px 0; }
+.dm-tuck-left:focus-visible, .dm-tuck-right:focus-visible { translate: none; }
+.dm-sliver-paused { background: linear-gradient(var(--dm-amber) 0 40%, transparent 40% 60%, var(--dm-amber) 60%); }
+
+/* Windows High Contrast replaces every background, which would hide the switch track and the hidden-button bar. */
 @media (forced-colors: active) {
   .dm-switch-track { border: 1px solid CanvasText; }
   .dm-switch-track::after { forced-color-adjust: none; background: CanvasText; }
   .dm-switch:checked + .dm-switch-track { forced-color-adjust: none; background: Highlight; }
   .dm-switch:checked + .dm-switch-track::after { background: HighlightText; }
-  .dm-dot { forced-color-adjust: none; background: CanvasText; }
+  /* Forced colours drop opacity, so the greyed switch needs its own cue here. */
+  .dm-switch[aria-disabled="true"] + .dm-switch-track { border-color: GrayText; }
+  .dm-switch[aria-disabled="true"] + .dm-switch-track::after { background: GrayText; }
+  /* Forced colours drop background-color, so a chosen chip would look exactly like an unchosen one. */
+  [aria-pressed="true"], label:has(input:checked) { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  .dm-sliver { forced-color-adjust: none; background: CanvasText; }
+  .dm-sliver-paused { background: linear-gradient(CanvasText 0 40%, transparent 40% 60%, CanvasText 60%); }
 }
 
+/*
+  Near-zero, not `animation: none`: the flash in Field.tsx clears itself in onAnimationEnd, and an
+  animation that never starts never ends, so the field would stay in the flashing set for good.
+*/
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

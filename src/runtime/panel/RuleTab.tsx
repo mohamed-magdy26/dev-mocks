@@ -1,19 +1,18 @@
 import { clsx } from 'clsx'
 import type { MockConfig } from '../controller.js'
+import { BodyMatchField } from './BodyMatchField.js'
 import { FOCUS, LINK } from './classes.js'
 import type { FormProps } from './Field.js'
 import { Breakable } from './Highlight.js'
 import { PathField } from './PathField.js'
+import { PausedNote } from './PausedNote.js'
 import { Presets } from './Presets.js'
 import { ResponseFields } from './ResponseFields.js'
-import { RuleList } from './RuleList.js'
+import { SequenceFields } from './SequenceFields.js'
 
-interface RulesTabProps extends FormProps {
+interface RuleTabProps extends FormProps {
   rules: MockConfig[]
   editing: number | null
-  onEdit: (index: number) => void
-  onRemove: (index: number) => void
-  onClearAll: () => void
   onCancelEdit: () => void
   pendingQuery: string
   onPendingQueryChange: (query: string) => void
@@ -21,15 +20,12 @@ interface RulesTabProps extends FormProps {
   paused: boolean
 }
 
-export function RulesTab(props: RulesTabProps) {
+/** One rule, being created or edited. The rules already saved live on the Active rules tab. */
+export function RuleTab(props: RuleTabProps) {
   const { form, onChange, rules, editing } = props
   return (
-    <div role="tabpanel" id="dm-panel-rules" aria-labelledby="dm-tab-rules" className="flex flex-col gap-5 px-4 pb-5 pt-3.5">
-      {props.paused && (
-        <p className="m-0 rounded-field border border-blue-line bg-blue-soft px-3 py-2 text-body">
-          Rules are paused. Every request goes to the real server until you turn the “Mock rules” switch in the header back on.
-        </p>
-      )}
+    <div role="tabpanel" id="dm-panel-rule" aria-labelledby="dm-tab-rule" className="flex flex-col gap-5 px-4 pb-5 pt-3.5">
+      {props.paused && <PausedNote />}
       {editing !== null && (
         <div className="flex items-center justify-between gap-2.5 rounded-field border border-accent-line bg-accent-soft py-2 pl-3 pr-2.5 text-body">
           <span className="min-w-0">
@@ -55,7 +51,8 @@ export function RulesTab(props: RulesTabProps) {
       />
       <Presets form={form} onChange={onChange} autoFocus={props.focusPresets} />
       <ResponseFields form={form} onChange={onChange} />
-      <RuleList rules={rules} editing={editing} onEdit={props.onEdit} onRemove={props.onRemove} onClearAll={props.onClearAll} />
+      <BodyMatchField form={form} onChange={onChange} />
+      <SequenceFields form={form} onChange={onChange} />
     </div>
   )
 }

@@ -4,8 +4,11 @@ import { splitEndpoints } from '../controller.js'
 import { requestLog, type LoggedRequest } from '../requests.js'
 import { FOCUS, HELP, INPUT, LABEL, MINI } from './classes.js'
 import { Field, type FormProps } from './Field.js'
-import { lastToken, pathParts, suggestions } from './form.js'
+import { lastToken, liftPastedOrigin, pathParts, suggestions } from './form.js'
 import { Breakable, Highlight } from './Highlight.js'
+
+/** No suggestion is highlighted, so Enter picks nothing and the arrow keys start from the ends of the list. */
+const NO_ACTIVE = -1
 
 interface PathFieldProps extends FormProps {
   pendingQuery: string
@@ -52,8 +55,10 @@ function Suggestion(props: { id: string; request: LoggedRequest; token: string; 
 export function PathField({ form, onChange, pendingQuery, onPendingQueryChange }: PathFieldProps) {
   const requests = useSyncExternalStore(requestLog.subscribe, requestLog.getSnapshot)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [active, setActive] = useState(-1)
+  const [active, setActive] = useState(NO_ACTIVE)
   const token = lastToken(form.path)
+  // formToRule() drops the origin from a rule holding several paths, so the switch must not claim otherwise.
+  const canPin = Boolean(form.origin) && splitEndpoints(form.path).length <= 1
   const options = menuOpen ? suggestions(requests, token) : []
   const showMenu = options.length > 0
 
@@ -62,12 +67,27 @@ export function PathField({ form, onChange, pendingQuery, onPendingQueryChange }
     const kept = splitEndpoints(form.path)
     if (token) kept.pop()
     setMenuOpen(false)
-    onChange({ ...form, path: [...kept, url.pathname].join(', ') })
+    // Only a rule holding this one path can promise one origin, so adding a second path leaves the origin alone.
+    const origin =
+      kept.length === 0
+        ? { origin: url.origin, matchOrigin: true, method: request.method.toUpperCase(), matchMethod: true }
+        : {}
+    onChange({ ...form, path: [...kept, url.pathname].join(', '), ...origin })
     onPendingQueryChange(kept.length === 0 ? url.search : '')
   }
 
+  /**
+   * Lifts a pasted full URL once the field loses focus, not on every keystroke: while someone types
+   * "https://api.example.com", the text "https://a" is already a valid URL and the line would jump.
+   * The field flashes because the text changes without the user typing it.
+   */
+  function liftOnBlur() {
+    const lifted = liftPastedOrigin(form)
+    if (lifted) onChange(lifted)
+  }
+
   function move(step: number) {
-    if (active < 0) {
+    if (active === NO_ACTIVE) {
       setActive(step > 0 ? 0 : options.length - 1)
       return
     }
@@ -79,14 +99,14 @@ export function PathField({ form, onChange, pendingQuery, onPendingQueryChange }
       if (event.key === 'ArrowDown') {
         event.preventDefault()
         setMenuOpen(true)
-        setActive(-1)
+        setActive(NO_ACTIVE)
       }
       return
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       move(event.key === 'ArrowDown' ? 1 : -1)
-    } else if (event.key === 'Enter' && active >= 0) {
+    } else if (event.key === 'Enter' && active !== NO_ACTIVE) {
       event.preventDefault()
       pick(options[active])
     } else if (event.key === 'Escape') {
@@ -98,6 +118,31 @@ export function PathField({ form, onChange, pendingQuery, onPendingQueryChange }
 
   return (
     <Field name="path">
+      {(form.method || form.origin) && (
+        <div className="flex flex-wrap items-start gap-x-5 gap-y-2">
+          {form.method && (
+            <div className="grid gap-0.5">
+              <span className={LABEL}>Method</span>
+              <span id="dm-method-value" className="font-mono text-sm text-dim">
+                {form.method}
+              </span>
+            </div>
+          )}
+          {form.origin && (
+            <div className="grid min-w-0 gap-0.5">
+              <span className={LABEL}>Origin</span>
+              {/* Breakable inserts <wbr> for wrapping, which a screen reader reads as breaks, so the
+                  switch is described by this unbroken copy instead. */}
+              <span id="dm-origin-value" className="sr-only">
+                {form.origin}
+              </span>
+              <span aria-hidden="true" className="break-words font-mono text-sm text-dim">
+                <Breakable text={form.origin} />
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       <label htmlFor="dm-path" className={LABEL}>
         Request path
       </label>
@@ -112,17 +157,20 @@ export function PathField({ form, onChange, pendingQuery, onPendingQueryChange }
           aria-autocomplete="list"
           aria-expanded={showMenu}
           aria-controls="dm-suggest"
-          aria-activedescendant={showMenu && active >= 0 ? `dm-opt-${active}` : undefined}
+          aria-activedescendant={showMenu && active !== NO_ACTIVE ? `dm-opt-${active}` : undefined}
           aria-describedby="dm-path-help"
           value={form.path}
           onChange={(event) => {
             onChange({ ...form, path: event.target.value }, false)
             onPendingQueryChange('')
             setMenuOpen(true)
-            setActive(-1)
+            setActive(NO_ACTIVE)
           }}
           onFocus={() => setMenuOpen(true)}
-          onBlur={() => setMenuOpen(false)}
+          onBlur={() => {
+            setMenuOpen(false)
+            liftOnBlur()
+          }}
           onKeyDown={onKeyDown}
           className={clsx(INPUT, 'h-9 w-full')}
         />
@@ -184,6 +232,64 @@ export function PathField({ form, onChange, pendingQuery, onPendingQueryChange }
         <span aria-hidden="true" className="dm-switch-track" />
         Match the query too
       </label>
+      <label
+        className={clsx(
+          'relative inline-flex w-fit select-none items-center gap-2 text-body',
+          form.origin ? 'cursor-pointer text-dim' : 'cursor-not-allowed text-faint',
+        )}
+      >
+        <input
+          type="checkbox"
+          className="dm-switch"
+          checked={canPin && form.matchOrigin}
+          // Not `disabled`: that drops the switch out of the tab order, and the one person who wants
+          // to know why it is greyed out is the one who tabbed to it. The guard below keeps it inert.
+          aria-disabled={!canPin}
+          aria-describedby={canPin ? 'dm-origin-value' : 'dm-origin-off'}
+          onChange={(event) => {
+            if (!canPin) return
+            onChange({ ...form, matchOrigin: event.target.checked }, false)
+          }}
+        />
+        <span aria-hidden="true" className="dm-switch-track" />
+        Match only this origin
+      </label>
+      {!canPin && (
+        <p id="dm-origin-off" className={HELP}>
+          {form.origin
+            ? 'A rule holding several paths matches them on every server, because one origin cannot speak for all of them.'
+            : 'This path has no origin, so the rule matches it on every server. Pick the request in the Requests tab, or paste its full URL above, to match one server only.'}
+        </p>
+      )}
+      <label
+        className={clsx(
+          'relative inline-flex w-fit select-none items-center gap-2 text-body',
+          form.method ? 'cursor-pointer text-dim' : 'cursor-not-allowed text-faint',
+        )}
+      >
+        <input
+          type="checkbox"
+          className="dm-switch"
+          checked={Boolean(form.method) && form.matchMethod}
+          // Not `disabled`, for the same reason as the origin switch above: it must stay reachable
+          // by Tab so the note below it can be heard. The guard keeps it inert.
+          aria-disabled={!form.method}
+          aria-describedby={form.method ? 'dm-method-value' : 'dm-method-off'}
+          onChange={(event) => {
+            if (!form.method) return
+            onChange({ ...form, matchMethod: event.target.checked }, false)
+          }}
+        />
+        <span aria-hidden="true" className="dm-switch-track" />
+        Match only this method
+      </label>
+      {!form.method && (
+        <p id="dm-method-off" className={HELP}>
+          This path has no method, so the rule answers GET, POST and every other method on it. Pick the request in the
+          Requests tab to answer one method only, so <code className="font-mono text-dim">GET /api/orders</code> and{' '}
+          <code className="font-mono text-dim">POST /api/orders</code> can be two rules.
+        </p>
+      )}
     </Field>
   )
 }

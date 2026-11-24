@@ -1,7 +1,7 @@
 import { getResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorController } from './controller.js'
-import { handlers } from './handlers.js'
+import { handleRequest, handlers, takeDecision } from './handlers.js'
 
 const request = (url: string) => new Request(url)
 
@@ -17,6 +17,154 @@ describe('handlers', () => {
     const response = await getResponse(handlers, request('https://api.test/api/menu'))
     expect(response?.status).toBe(500)
     expect(await response?.json()).toEqual({ message: 'Internal Server Error', code: 'SERVER_ERROR' })
+  })
+
+  it('gives the first answer to the 1st call and the later answer to every call after it', async () => {
+    errorController.addConfig({
+      scenario: 'custom',
+      endpoints: ['/api/orders'],
+      customStatusCode: 200,
+      customResponse: { ok: true },
+      firstCalls: 1,
+      later: { scenario: 'custom', customStatusCode: 500 },
+    })
+    const call = () => getResponse(handlers, request('https://api.test/api/orders'))
+    const first = await call()
+    expect(first?.status).toBe(200)
+    expect(await first?.json()).toEqual({ ok: true })
+    expect((await call())?.status).toBe(500)
+    expect((await call())?.status).toBe(500)
+  })
+
+  it('lets the real server answer once the first calls are used up', async () => {
+    errorController.addConfig({
+      scenario: 'custom',
+      endpoints: ['/api/orders'],
+      customStatusCode: 500,
+      firstCalls: 2,
+      later: { scenario: 'none' },
+    })
+    const call = () => getResponse(handlers, request('https://api.test/api/orders'))
+    expect((await call())?.status).toBe(500)
+    expect((await call())?.status).toBe(500)
+    expect(await call()).toBeUndefined()
+  })
+
+  it('counts each method and each server on its own, so one sequence never spends another', async () => {
+    const sequence = { firstCalls: 1, later: { scenario: 'custom' as const, customStatusCode: 500 } }
+    errorController.addConfig({ scenario: 'custom', customStatusCode: 200, endpoints: ['/api/orders'], method: 'GET', matchMethod: true, ...sequence })
+    errorController.addConfig({ scenario: 'custom', customStatusCode: 201, endpoints: ['/api/orders'], method: 'POST', matchMethod: true, ...sequence })
+    const get = () => getResponse(handlers, request('https://api.test/api/orders'))
+    const post = () => getResponse(handlers, new Request('https://api.test/api/orders', { method: 'POST' }))
+    expect((await get())?.status).toBe(200)
+    // The GET has spent its one first call. The POST must still have its own.
+    expect((await post())?.status).toBe(201)
+    expect((await get())?.status).toBe(500)
+    expect((await post())?.status).toBe(500)
+  })
+
+  describe('what the handler reports back about a request', () => {
+    it('reports "mocked" when a rule answered, and "delayed" when one only waited', async () => {
+      errorController.addConfig({ scenario: '500', endpoints: ['/api/user'] })
+      errorController.addConfig({ scenario: 'slow', endpoints: ['/api/menu'], delayMs: 1 })
+      await handleRequest(request('https://api.test/api/user'), 'a')
+      await handleRequest(request('https://api.test/api/menu'), 'b')
+      expect(takeDecision('a')).toEqual({ tag: 'mocked', rule: '* * * /api/user' })
+      expect(takeDecision('b')).toEqual({ tag: 'delayed', rule: '* * * /api/menu' })
+    })
+
+    it('names the rule that really answered, not the one saved last on the same path', async () => {
+      const shared = { scenario: 'custom' as const, endpoints: ['/api/orders'], method: 'POST', matchMethod: true }
+      errorController.addConfig({ ...shared, customStatusCode: 400, bodyMatch: { field: 'coupon', value: 'EXPIRED' } })
+      errorController.addConfig({ ...shared, customStatusCode: 409, bodyMatch: { field: 'coupon', value: 'USED' } })
+      const expired = new Request('https://api.test/api/orders', { method: 'POST', body: '{"coupon":"EXPIRED"}' })
+      expect((await handleRequest(expired, 'e'))?.status).toBe(400)
+      expect(takeDecision('e')?.rule).toBe('POST * coupon=EXPIRED /api/orders')
+    })
+
+    it('reports nothing when a body condition stopped the rule, so the row cannot claim a rule', async () => {
+      errorController.addConfig({
+        scenario: 'slow',
+        endpoints: ['/api/orders'],
+        delayMs: 1,
+        bodyMatch: { field: 'coupon', value: 'EXPIRED' },
+      })
+      const other = new Request('https://api.test/api/orders', { method: 'POST', body: '{"coupon":"WELCOME"}' })
+      expect(await handleRequest(other, 'c')).toBeUndefined()
+      expect(takeDecision('c')).toBeUndefined()
+    })
+
+    it('forgets a decision once it is read, so the map does not grow for the life of the page', async () => {
+      errorController.addConfig({ scenario: '500', endpoints: ['/api/user'] })
+      await handleRequest(request('https://api.test/api/user'), 'd')
+      expect(takeDecision('d')?.tag).toBe('mocked')
+      expect(takeDecision('d')).toBeUndefined()
+    })
+  })
+
+  it('answers the same way every time when the rule has no call count, which is every older rule', async () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders'] })
+    for (let call = 0; call < 3; call++) {
+      expect((await getResponse(handlers, request('https://api.test/api/orders')))?.status).toBe(500)
+    }
+  })
+
+  describe('matching on the request body', () => {
+    const order = (body: unknown) =>
+      new Request('https://api.test/api/orders', { method: 'POST', body: JSON.stringify(body) })
+
+    it('answers the body it was made for and lets every other body through', async () => {
+      errorController.addConfig({
+        scenario: 'custom',
+        endpoints: ['/api/orders'],
+        method: 'POST',
+        customStatusCode: 400,
+        bodyMatch: { field: 'coupon', value: 'EXPIRED' },
+      })
+      expect((await getResponse(handlers, order({ coupon: 'EXPIRED' })))?.status).toBe(400)
+      expect(await getResponse(handlers, order({ coupon: 'SAVE10' }))).toBeUndefined()
+    })
+
+    it('reads a field inside another field, and compares a number as text', async () => {
+      errorController.addConfig({
+        scenario: '500',
+        endpoints: ['/api/orders'],
+        bodyMatch: { field: 'user.id', value: '7' },
+      })
+      expect((await getResponse(handlers, order({ user: { id: 7 } })))?.status).toBe(500)
+      expect(await getResponse(handlers, order({ user: { id: 8 } }))).toBeUndefined()
+    })
+
+    it('never matches a request that carries no body, such as a GET', async () => {
+      errorController.addConfig({
+        scenario: '500',
+        endpoints: ['/api/orders'],
+        bodyMatch: { field: 'coupon', value: 'EXPIRED' },
+      })
+      expect(await getResponse(handlers, request('https://api.test/api/orders'))).toBeUndefined()
+    })
+
+    it('never matches a body that is not JSON', async () => {
+      errorController.addConfig({
+        scenario: '500',
+        endpoints: ['/api/orders'],
+        bodyMatch: { field: 'coupon', value: 'EXPIRED' },
+      })
+      const text = new Request('https://api.test/api/orders', { method: 'POST', body: 'coupon=EXPIRED' })
+      expect(await getResponse(handlers, text)).toBeUndefined()
+    })
+
+    it('leaves the body unread, so a request that goes to the real server still carries it', async () => {
+      errorController.addConfig({
+        scenario: '500',
+        endpoints: ['/api/orders'],
+        bodyMatch: { field: 'coupon', value: 'EXPIRED' },
+      })
+      const sent = order({ coupon: 'SAVE10' })
+      expect(await getResponse(handlers, sent)).toBeUndefined()
+      expect(sent.bodyUsed).toBe(false)
+      expect(await sent.text()).toBe('{"coupon":"SAVE10"}')
+    })
   })
 
   it('returns undefined when no rule matches, so MSW sends the real request', async () => {

@@ -2,7 +2,7 @@ import { clsx } from 'clsx'
 import { useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react'
 import { FOCUS } from './classes.js'
 import { GearIcon } from './icons.js'
-import { FAB_CORNER, isDragStart, nearestCorner, ruleStatus, showsDot, type Corner } from './settings.js'
+import { EDGE, isDragStart, nearestCorner, ruleStatus, type Corner } from './settings.js'
 
 const NEAR_PX = 96
 const PRIMARY_BUTTON = 0
@@ -23,7 +23,7 @@ interface LauncherProps {
   onCornerChange: (corner: Corner) => void
 }
 
-interface DotProps {
+interface SliverProps {
   count: number
   paused: boolean
   corner: Corner
@@ -32,24 +32,30 @@ interface DotProps {
   onShow: () => void
 }
 
-function Dot({ count, paused, corner, shortcutLabel, autoFocus, onShow }: DotProps) {
+function Sliver({ count, paused, corner, shortcutLabel, autoFocus, onShow }: SliverProps) {
   const status = ruleStatus(count, paused)
+  const edge = EDGE[corner]
   return (
     <button
       type="button"
       autoFocus={autoFocus}
-      aria-label={`${status}. Show the dev mocks button.`}
+      aria-label={`Show the dev mocks button. ${status}.`}
       aria-keyshortcuts={shortcutLabel}
-      title={`${status} · click or press ${shortcutLabel} to show ⚙️`}
+      title={`${status} · click or press ${shortcutLabel} to show the dev mocks tab`}
       onClick={onShow}
-      className={clsx(LAUNCHER_FOCUS, FAB_CORNER[corner], 'fixed z-top grid h-6 w-6 place-items-center rounded-full')}
+      className={clsx(LAUNCHER_FOCUS, edge.sliver, 'group fixed z-top flex h-11 w-6 items-center')}
     >
       <span
         aria-hidden="true"
-        className={clsx('dm-dot h-2 w-2 rounded-full ring-2 ring-panel', {
-          'animate-rec bg-accent': !paused,
-          'bg-amber': paused,
-        })}
+        className={clsx(
+          edge.bar,
+          'dm-sliver w-1 ring-1 ring-panel transition-size duration-200 ease-dm group-hover:w-2 group-focus-visible:w-2',
+          {
+            'h-7 animate-rec bg-accent group-hover:h-9 group-focus-visible:h-9': count > 0 && !paused,
+            'dm-sliver-paused h-7 group-hover:h-9 group-focus-visible:h-9': count > 0 && paused,
+            'h-3 bg-faint group-hover:h-5 group-focus-visible:h-5': count === 0,
+          },
+        )}
       />
     </button>
   )
@@ -78,6 +84,10 @@ function Fab(props: FabProps) {
   const dragged = useRef(false)
   const [dragging, setDragging] = useState(false)
   const [near, setNear] = useState(false)
+  const edge = EDGE[corner]
+  const idle = !open && !near && !dragging
+  const active = count > 0 && !paused
+  const pausedRules = count > 0 && paused
 
   // The box is measured only when it can change, so a mouse move on the app costs a few comparisons, not a layout.
   useEffect(() => {
@@ -153,7 +163,7 @@ function Fab(props: FabProps) {
       autoFocus={props.autoFocus}
       aria-expanded={open}
       aria-controls="dm-pop"
-      aria-label={`Dev mocks panel, ${ruleStatus(count, paused)}`}
+      aria-label={`Dev mocks panel. ${ruleStatus(count, paused)}.`}
       onClick={onClick}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -161,20 +171,29 @@ function Fab(props: FabProps) {
       onPointerCancel={endDrag}
       className={clsx(
         LAUNCHER_FOCUS,
-        FAB_CORNER[corner],
-        'group fixed z-top flex h-11 touch-none items-center gap-2 rounded-full border border-line-strong bg-panel pl-3.5 pr-3 text-ink shadow-pop transition-fab duration-200 ease-dm focus-visible:opacity-100',
+        edge.tab,
+        'group fixed z-top flex w-9 touch-none flex-col items-center gap-1.5 border border-line-strong bg-panel py-2.5 text-ink shadow-pop transition-fab duration-200 ease-dm hover:border-faint focus-visible:opacity-100',
         {
-          'hover:-translate-y-px hover:border-faint': !dragging,
+          [edge.tucked]: idle,
           'translate-x-drag-x translate-y-drag-y cursor-grabbing will-change-transform': dragging,
-          'opacity-75': !open && !near && !dragging,
+          'opacity-75': idle,
         },
       )}
     >
+      <span
+        aria-hidden="true"
+        className={clsx('absolute inset-y-3.5 w-0.5 rounded-full', edge.stripe, {
+          'bg-accent': active,
+          'bg-amber': pausedRules,
+          'bg-line-strong': count === 0,
+        })}
+      />
       <GearIcon className="h-5 w-5 transition-transform duration-500 ease-dm group-aria-expanded:rotate-90" />
       <span
         className={clsx('grid h-5 min-w-5 place-items-center rounded-full px-1.5 font-mono text-xs font-bold leading-none', {
-          'bg-accent text-accent-ink': count > 0 && !paused,
-          'bg-hover text-ink': count === 0 || paused,
+          'bg-accent text-accent-ink': active,
+          'bg-hover text-ink': !active,
+          'shadow-ring-amber': pausedRules,
         })}
       >
         {count}
@@ -183,7 +202,7 @@ function Fab(props: FabProps) {
   )
 }
 
-/** The ⚙️ button. Dragging it snaps it to a corner. While hidden, only a dot stays when there are rules: lime while active, amber while paused. */
+/** The ⚙️ tab on the screen edge. Dragging it snaps it to the nearest corner. While it is hidden, a thin bar stays on the edge: a solid lime bar while rules are active, a split amber bar while paused, a short grey stub with no rules. */
 export function Launcher(props: LauncherProps) {
   if (!props.hidden) {
     return (
@@ -199,9 +218,8 @@ export function Launcher(props: LauncherProps) {
       />
     )
   }
-  if (!showsDot(props)) return null
   return (
-    <Dot
+    <Sliver
       count={props.count}
       paused={props.paused}
       corner={props.corner}
