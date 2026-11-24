@@ -9,6 +9,7 @@ import {
   nearestCorner,
   NEXT_CORNER,
   openingTab,
+  TABS,
   parseShortcut,
   POP_CORNER,
   readCorner,
@@ -153,22 +154,27 @@ describe('hiddenNotice', () => {
 })
 
 describe('openingTab', () => {
-  it('opens a panel that has rules on the list, so you first see what is mocking your app', () => {
-    expect(openingTab('', 2)).toBe('active')
+  it('always opens on the list, so you first see what is mocking your app', () => {
+    expect(openingTab('')).toBe('active')
   })
 
-  it('opens a panel with no rules on the form, because an empty list has nothing to show', () => {
-    expect(openingTab('', 0)).toBe('rule')
+  it('opens on the list even when no rule exists, so the panel always starts in the same place', () => {
+    expect(openingTab('')).toBe('active')
   })
 
-  it('reopens the tab the user chose earlier this session, whatever the rules say', () => {
-    expect(openingTab('rule', 2)).toBe('rule')
-    expect(openingTab('requests', 0)).toBe('requests')
-    expect(openingTab('active', 0)).toBe('active')
+  it('reopens the tab the user chose earlier this session', () => {
+    expect(openingTab('rule')).toBe('rule')
+    expect(openingTab('requests')).toBe('requests')
+    expect(openingTab('active')).toBe('active')
   })
 
   it('ignores a stored tab name this version no longer has', () => {
-    expect(openingTab('rules', 2)).toBe('active')
-    expect(openingTab('rules', 0)).toBe('rule')
+    expect(openingTab('rules')).toBe('active')
+  })
+})
+
+describe('TABS', () => {
+  it('puts the active rules first, then the form, then the recorded requests', () => {
+    expect(TABS).toEqual(['active', 'rule', 'requests'])
   })
 })

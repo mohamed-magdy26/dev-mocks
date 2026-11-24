@@ -92,7 +92,7 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
   const [focusSwitch, setFocusSwitch] = useState(focusSwitchOnLoad)
   const [open, setOpen] = useState(() => !hidden && readSession('open') === OPEN_FLAG)
   const [rules] = useState<MockConfig[]>(() => errorController.getAllConfigs())
-  const [tab, setTab] = useState<Tab>(() => openingTab(readSession('tab'), rules.length))
+  const [tab, setTab] = useState<Tab>(() => openingTab(readSession('tab')))
   const [paused] = useState(() => errorController.isPaused())
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [editing, setEditing] = useState<number | null>(null)

@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 import { useMemo } from 'react'
 import { CHIP, CHIP_RADIO, FOCUS, HELP, INPUT, LABEL, LABEL_ROW } from './classes.js'
 import { Field, type FormProps } from './Field.js'
+import { InfoTip, TipCase, TipCases } from './InfoTip.js'
 import {
   checkJson,
   FIRST_CALLS_CHIPS,
@@ -31,36 +32,42 @@ export function SequenceFields({ form, onChange }: FormProps) {
 
   return (
     <Field name="sequence">
-      <label className="relative inline-flex w-fit cursor-pointer select-none items-center gap-2 text-body text-dim">
-        <input
-          type="checkbox"
-          className="dm-switch"
-          checked={on}
-          aria-expanded={on}
-          onChange={(event) =>
-            onChange(
-              {
-                ...form,
-                sequenceOn: event.target.checked,
-                // A count the user already typed survives being switched off and on, as the origin
-                // and the method do. Only an empty or refused box falls back to the smallest count.
-                firstCalls:
-                  Number(form.firstCalls) >= MIN_FIRST_CALLS ? form.firstCalls : String(MIN_FIRST_CALLS),
-              },
-              false,
-            )
-          }
-        />
-        <span aria-hidden="true" className="dm-switch-track" />
-        Answer differently after the first calls
-      </label>
-
-      {!on && (
-        <p className={HELP}>
-          Off, the rule answers the same way every time. On, you can make the 1st call succeed and every call after it
-          fail, which is how a retry gets tested. The count starts again on every page reload.
-        </p>
-      )}
+      {/* The (i) button sits beside the label, never inside it: a click anywhere in a label flips the
+          switch, so a button placed in there would turn the sequence on while opening the explanation. */}
+      <div className="flex items-center gap-1.5">
+        <label className="relative inline-flex w-fit cursor-pointer select-none items-center gap-2 text-body text-dim">
+          <input
+            type="checkbox"
+            className="dm-switch"
+            checked={on}
+            aria-expanded={on}
+            onChange={(event) =>
+              onChange(
+                {
+                  ...form,
+                  sequenceOn: event.target.checked,
+                  // A count the user already typed survives being switched off and back on. Only an
+                  // empty or refused box falls back to the smallest count.
+                  firstCalls:
+                    Number(form.firstCalls) >= MIN_FIRST_CALLS ? form.firstCalls : String(MIN_FIRST_CALLS),
+                },
+                false,
+              )
+            }
+          />
+          <span aria-hidden="true" className="dm-switch-track" />
+          Answer differently after the first calls
+        </label>
+        <InfoTip label="Answer differently after the first calls">
+          <p>Off, the rule answers the same way every time. On, the answer changes once a number of calls have been
+          made, which is how a retry gets tested.</p>
+          <TipCases>
+            <TipCase code="first 1 call">Gets the answer set above, such as 200 with your JSON.</TipCase>
+            <TipCase code="every call after that">Gets what you set below, such as 500, or the real server.</TipCase>
+          </TipCases>
+          <p>The count starts again on every page reload.</p>
+        </InfoTip>
+      </div>
 
       {on && (
         <div className="flex flex-col gap-3 rounded-field border border-line bg-sunken px-3 py-2.5">

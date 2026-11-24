@@ -58,7 +58,8 @@ export default {
       full: '9999px',
     },
     extend: {
-      width: { pop: 'min(480px, calc(100% - 64px))', delay: '116px', status: '72px' },
+      // The tip never grows past the panel, and on a phone-sized window it shrinks with the viewport.
+      width: { pop: 'min(480px, calc(100% - 64px))', delay: '116px', status: '72px', tip: 'min(272px, calc(100vw - 48px))' },
       height: { pop: 'min(680px, calc(100vh - 100px))', 'pop-narrow': 'min(680px, calc(100vh - 92px))' },
       maxHeight: { menu: '320px' },
       minHeight: { json: '132px' },
@@ -66,7 +67,7 @@ export default {
       maxWidth: { toast: 'calc(100% - 28px)' },
       // 84 px puts the middle of the 44 px hidden-button bar at the middle of the 68 px tab, which sits 72 px from the edge.
       inset: { edge: '72px', sliver: '84px', toast: '74px' },
-      translate: { 'drag-x': 'var(--dm-drag-x)', 'drag-y': 'var(--dm-drag-y)' },
+      translate: { 'drag-x': 'var(--dm-drag-x)', 'drag-y': 'var(--dm-drag-y)', tip: 'var(--dm-tip-shift, 0px)' },
       zIndex: { top: '2147483000' },
       letterSpacing: { label: '0.06em' },
       flexShrink: { lots: '1000' },

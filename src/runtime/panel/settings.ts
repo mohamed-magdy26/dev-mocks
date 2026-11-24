@@ -25,17 +25,17 @@ export function writeSetting(key: string, value: string): void {
 
 /** `rule` is the form, used to create a rule and to edit one. `active` lists the rules already saved. */
 export type Tab = 'rule' | 'active' | 'requests'
-export const TABS: Tab[] = ['rule', 'active', 'requests']
-export const TAB_LABELS: Record<Tab, string> = { rule: 'Rule', active: 'Active rules', requests: 'Requests' }
+export const TABS: Tab[] = ['active', 'rule', 'requests']
+export const TAB_LABELS: Record<Tab, string> = { active: 'Active rules', rule: 'Rule', requests: 'Requests' }
 
 /**
- * The tab the panel opens on. A tab the user already chose this session wins. Otherwise a panel that
- * has rules opens on the list, so the first thing you see is what is already mocking your app, and a
- * panel with no rules opens on the form, because an empty list has nothing to show.
+ * The tab the panel opens on. A tab the user already chose this session wins, so reopening the panel
+ * returns them to where they were. Otherwise it opens on the list of active rules, whether or not any
+ * exist, so the first thing seen is always what is mocking the app right now.
  */
-export function openingTab(saved: string, ruleCount: number): Tab {
+export function openingTab(saved: string): Tab {
   if (TABS.some((name) => name === saved)) return saved as Tab
-  return ruleCount > 0 ? 'active' : 'rule'
+  return 'active'
 }
 
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'

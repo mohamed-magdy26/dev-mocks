@@ -12,11 +12,10 @@ export type FlashField = 'path' | 'kind' | 'delay' | 'status' | 'json' | 'sequen
 export interface FormState {
   path: string
   full: boolean
+  /** The server the rule is tied to, for example `https://api.shop.com`. Empty means every server. */
   origin: string
-  matchOrigin: boolean
-  /** The method of the request this rule was made from, upper case. Empty when the path was typed by hand. */
+  /** The one method the rule answers, upper case. Empty means every method, shown in the select as "Any". */
   method: string
-  matchMethod: boolean
   kind: Kind
   delay: string
   status: string
@@ -107,9 +106,7 @@ export const EMPTY_FORM: FormState = {
   path: '',
   full: false,
   origin: '',
-  matchOrigin: false,
   method: '',
-  matchMethod: false,
   kind: 'response',
   delay: '',
   status: '500',
@@ -122,6 +119,9 @@ export const EMPTY_FORM: FormState = {
   bodyField: '',
   bodyValue: '',
 }
+
+/** The methods the select offers beside the path. Empty, shown as "Any", answers all of them. */
+export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
 export const FIRST_CALLS_CHIPS = ['1', '2', '3']
 export const FIRST_CALLS_MAX_DIGITS = 3
@@ -169,9 +169,7 @@ export function requestToForm(form: FormState, request: LoggedRequest, body: Rec
     path: picked.pathname,
     full: false,
     origin: picked.origin,
-    matchOrigin: true,
     method: request.method.toUpperCase(),
-    matchMethod: true,
   }
   if (typeof request.status !== 'number') return { form: withPath, note: '' }
   if ('missing' in body) return { form: withPath, note: MISSING_BODY_TEXT[body.missing] }
@@ -283,17 +281,17 @@ export function formToRule(form: FormState): MockConfig {
   // Both fields go in together, so a rule can never hold a count with no answer to change to.
   const sequence = form.sequenceOn && firstCalls >= MIN_FIRST_CALLS ? { firstCalls, later: laterAnswer(form) } : {}
   // One origin can only speak for one path, so a rule holding several paths stops enforcing it.
-  const pinned = form.matchOrigin && form.origin && endpoints.length === 1
+  const pinned = Boolean(form.origin) && endpoints.length === 1
   const base = {
     endpoints,
     matchFullUrl: form.full,
-    // `undefined` keeps the saved rule small, and keeps an origin-less rule identical to one saved before this field existed.
-    origin: form.origin || undefined,
+    // Written together, and only when the origin applies. `matchOrigin` is no longer a choice the
+    // user makes, but it stays in the saved rule so rules saved by older versions still read the same.
+    origin: pinned ? form.origin : undefined,
     matchOrigin: pinned ? true : undefined,
-    // Kept whatever the switch says, like the origin above, so turning the switch off and on again
-    // does not send the user back to the Requests tab to find the request a second time.
+    // An empty method is the "Any" option in the select, which saves no method at all.
     method: form.method ? form.method.toUpperCase() : undefined,
-    matchMethod: form.matchMethod && form.method ? true : undefined,
+    matchMethod: form.method ? true : undefined,
     // Both halves go in together, so a rule can never hold a field with no value to compare it to.
     // Both are trimmed, so a trailing space typed in either box cannot stop the rule ever matching.
     bodyMatch:
@@ -324,10 +322,10 @@ export function ruleToForm(rule: MockConfig): FormState {
     ...EMPTY_FORM,
     path: rule.endpoints.join(', '),
     full: Boolean(rule.matchFullUrl),
-    origin: rule.origin ?? '',
-    matchOrigin: Boolean(rule.matchOrigin),
-    method: rule.method ?? '',
-    matchMethod: Boolean(rule.matchMethod),
+    // Read through the saved switch, not around it. A rule saved by an older version could hold an
+    // origin with its switch off, and loading that origin into the form would start enforcing it.
+    origin: rule.matchOrigin ? (rule.origin ?? '') : '',
+    method: rule.matchMethod ? (rule.method ?? '') : '',
     delay: rule.delayMs ? String(rule.delayMs) : '',
     sequenceOn: Boolean(rule.firstCalls && rule.later),
     firstCalls: rule.firstCalls ? String(rule.firstCalls) : '',
@@ -378,7 +376,7 @@ export function liftPastedOrigin(form: FormState): FormState | undefined {
   if (endpoints.length !== 1 || !/^https?:\/\//i.test(endpoints[0])) return undefined
   try {
     const url = new URL(endpoints[0])
-    return { ...form, path: `${url.pathname}${url.search}`, origin: url.origin, matchOrigin: true }
+    return { ...form, path: `${url.pathname}${url.search}`, origin: url.origin }
   } catch {
     // Not a URL after all, so the caller keeps the text and findProblem() reports it on save.
     return undefined
@@ -431,9 +429,7 @@ export function changedFields(before: FormState, after: FormState): FlashField[]
     before.path !== after.path ||
     before.full !== after.full ||
     before.origin !== after.origin ||
-    before.matchOrigin !== after.matchOrigin ||
-    before.method !== after.method ||
-    before.matchMethod !== after.matchMethod
+    before.method !== after.method
   ) {
     fields.push('path')
   }
