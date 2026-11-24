@@ -180,9 +180,46 @@ The rule stays after reloads and after dev server restarts. The panel saves the 
 localStorage under the key `dev-mocks:rules`. Each browser and each dev server address keeps its own
 rules, so `localhost:5173` and `localhost:4201` do not share rules.
 
-To change a rule, click the pencil next to it under "Active rules", then click "Update & reload". To stop
-a rule, click the bin next to it. To stop every rule, click "Remove all", then click it a second time
-within 3 seconds to confirm. Each of these actions reloads the page.
+To change a rule, click the pencil next to it under "Active rules", then click "Update & reload". To
+pause one rule without losing what it says, click the pause button next to it, described under
+[Pause one rule](#pause-one-rule). To delete a rule, click the bin next to it. To delete every rule,
+click "Remove all", then click it a second time within 3 seconds to confirm. Each of these actions
+reloads the page.
+
+### Pause one rule
+
+The "Mock rules" switch in the panel's header pauses **every** rule at once. The pause button on a
+rule's own row pauses **that one rule**, and leaves the others answering.
+
+| When you do this | The panel does this |
+|---|---|
+| In the "Active rules" list, click the pause button on a row | The page reloads. That rule stops answering, its row turns grey and reads `paused · the real server answers`, and every other rule keeps answering. |
+| Click the same button again | The page reloads and the rule answers again, with the same status, body and delay it had before. |
+| Click the pencil on a paused rule, then "Update & reload" | The rule answers again. Saving an edit always resumes a rule, because the page reloads straight afterwards and you would otherwise see no change. |
+| Click the bin on a paused rule | The rule is deleted, exactly as for a live rule. |
+
+The rule keeps its place in the list, so pausing never changes which rule wins when two rules match
+the same request. The panel stores the flag inside the rule itself, in `dev-mocks:rules`, as
+`"paused": true`.
+
+**An invented example**, because this repo has no saved case to quote. You have two rules:
+
+1. `GET /api/orders` answers 500.
+2. `POST /api/orders` answers 422 with field errors.
+
+You want the 500 off for ten minutes while you work on the form.
+
+| Step | What you see |
+|---|---|
+| You click the pause button on the `GET /api/orders` row | The page reloads. The row is grey and reads `paused · the real server answers`. |
+| The app calls `GET /api/orders` | The real server answers with your five orders. |
+| The app calls `POST /api/orders` | Still 422. That rule was never touched. |
+| You look at the panel's header | It reads `1 of 2 rules active`, and the ⚙️ tab's badge reads `1`. The "Active rules" tab badge still reads `2`, because two rules are saved. |
+| You reload the page yourself | The rule is still paused. The flag is saved with the rule. |
+| You click the pause button again | The page reloads and `GET /api/orders` answers 500 again. |
+
+When every saved rule is paused one by one, the header reads `2 rules paused`, the same line the
+"Mock rules" switch produces, and the ⚙️ tab's bar shows the amber split bar.
 
 ### Move, shrink and pause the ⚙️ tab
 
@@ -514,24 +551,149 @@ file exists.
 
 ## Known limits
 
-- `init` indents the wrapped code with 2 spaces. A file indented with tabs ends up with mixed
-  indentation. Run your formatter, for example Prettier, after `init`.
-- A multi-line template string (text between backticks) inside the render call gets 2 extra spaces on each
-  of its lines.
 - In a file with no imports, `init` puts the new import on line 1. That is above a `'use strict'` line
   or a header comment. Move the import by hand if that matters to you.
 - In a pnpm workspace, the lockfile sits at the workspace root, and `init` does not look there. `init`
   then installs msw with npm. Run `pnpm add -D "msw@^2"` first. `init` skips the install when msw is
   already in `package.json`.
-- One rule alone cannot be paused. The "Mock rules" switch pauses every rule at once. To turn one rule off for a while, remove it and add it again later.
 - A request sent with `mode: 'no-cors'` gets an opaque answer (an answer the page is not allowed to read),
   and MSW reports no answer for it. Its row in the "Requests" tab stays `pending`, and shows `no answer`
   after the next reload.
 - The panel loads its two fonts, Instrument Sans and JetBrains Mono, from Google Fonts. When your app's
   Content Security Policy blocks Google Fonts, the panel uses the system fonts instead.
 - A browser lets only one service worker control a page's scope. When your app registers its own service
-  worker at `/`, for example a PWA, that worker and MSW conflict. Turn your own service worker off on the
-  dev server.
+  worker at `/`, for example a PWA, that worker and MSW get in each other's way. Read
+  [If your app registers its own service worker](#if-your-app-registers-its-own-service-worker-a-pwa).
+
+## If your app registers its own service worker (a PWA)
+
+Read this section only when your own app calls `navigator.serviceWorker.register(...)`. A PWA does
+that, and so does an offline cache or a push-notification worker. When your app never calls it, nothing
+here can happen to you, and you can skip to [Troubleshooting](#troubleshooting).
+
+**Nobody on this team has tried this yet.** Everything below is read from the browser rules and from
+MSW's own code, not from a dev server we ran with a PWA in it. The last part of this section,
+[What to report back](#what-to-report-back), says exactly what we need to hear from you.
+
+### Why the two workers get in each other's way
+
+A service worker is a small script the browser keeps running next to your page. It sees every request
+the page sends, and it may answer a request itself. That is how a PWA works offline, and it is also how
+dev-mocks puts a fake answer in front of your app.
+
+The browser gives one path, called the scope, to exactly one service worker. A page at
+`http://localhost:5173/orders` is inside the scope `/`. Two scripts cannot both hold `/`, so the second
+one to register takes the scope from the first.
+
+Both of these register at `/` on your dev server:
+
+| Who registers | Which file | When |
+| --- | --- | --- |
+| MSW, started by `startDevMocks()` | `/mockServiceWorker.js` | every page load, inside `startDevMocks()` |
+| Your app | usually `/sw.js` or `/service-worker.js` | wherever your app calls `register()` |
+
+So on every page load the two race, and the one that registers last controls the page:
+
+| When this happens | The browser does this |
+| --- | --- |
+| Your app registers `/sw.js` after `startDevMocks()` finished | `/sw.js` takes the scope `/`. Your rules stop answering. The ⚙️ panel still opens and still lists the rules, which is why this is confusing. |
+| `startDevMocks()` registers after your app did | `/mockServiceWorker.js` takes the scope `/`. Your rules answer, and whatever your own worker did, for example serving a cached page offline, stops. |
+| Nobody reloads, and a worker is already installed from an earlier visit | The installed worker keeps control until the page is reloaded. The symptom can therefore survive the change you just made. |
+
+### What you would see
+
+- The ⚙️ tab appears, the rule is in the list, the rule says `500`, and the request still comes back
+  `200` from the real server.
+- The "Requests" tab shows the request, labelled as not mocked.
+- Or the opposite: mocking works, and your app's offline behaviour stops working on the dev server.
+- The console may show `[dev-mocks] Mocks are off because MSW failed to start.` That line means MSW
+  never got its worker registered at all.
+
+### Check which worker is in control
+
+1. In Chrome, open DevTools with F12.
+2. In DevTools, open the "Application" tab.
+3. In the Application tab's left sidebar, click "Service workers".
+4. Read the "Source" line of the worker marked `#NNNN activated and is running`. When it names
+   `mockServiceWorker.js`, MSW holds the page. When it names your own file, for example `sw.js`, your
+   app holds the page.
+
+### Turn your own worker off on the dev server
+
+Keep the worker in production, and stop registering it while you develop. Pick the one line below that
+matches how your app registers it. All three examples are invented, because this repository has no PWA
+in it.
+
+**vite-plugin-pwa.** In `vite.config.ts` at the repo root, the plugin has a `devOptions` block. Set
+`enabled` to `false` there, which is also the default:
+
+```ts
+VitePWA({
+  devOptions: { enabled: false },
+})
+```
+
+**Create React App.** In `src/index.tsx`, the file calls either `serviceWorker.register()` or
+`serviceWorkerRegistration.register()`. Change that one call to `unregister()`, which CRA also ships:
+
+```ts
+serviceWorkerRegistration.unregister()
+```
+
+**A `register()` call you wrote yourself.** Wherever that call sits, put it behind the mode check, so it
+runs in a production build only:
+
+```ts
+if (process.env.NODE_ENV !== 'development') {
+  void navigator.serviceWorker.register('/sw.js')
+}
+```
+
+### Remove a worker that is already installed
+
+Turning the registration off stops new installs. A worker installed on an earlier visit stays until you
+remove it.
+
+1. In DevTools, open the "Application" tab, then "Service workers" in its left sidebar.
+2. Next to your own worker, click "Unregister".
+3. Reload the page.
+
+When you would rather do it in code, paste this in the DevTools "Console" tab, read what it prints, and
+reload:
+
+```js
+navigator.serviceWorker.getRegistrations().then((list) => {
+  list.forEach((reg) => {
+    console.log('removing', reg.active?.scriptURL)
+    void reg.unregister()
+  })
+})
+```
+
+### What we have not built
+
+MSW can also mock without a service worker at all, by patching `fetch` and `XMLHttpRequest` in the page.
+MSW picks that path only when the browser has no service worker support, and version 2.15.0 offers no
+option to ask for it. So dev-mocks cannot offer it either today.
+
+MSW does expose one more escape hatch, an option called `findWorker`, which lets a project keep its own
+worker and load MSW's script inside it with `importScripts('/mockServiceWorker.js')`. `startDevMocks()`
+does not pass that option through today. If your report back says you need it, it is a small change to
+`src/runtime/start.ts` and we can add it.
+
+### What to report back
+
+Please write down these five things and send them over.
+
+1. How your app registers its worker: the plugin or the file and line that calls `register()`.
+2. What the DevTools "Service workers" panel shows while your dev server runs, before you change
+   anything: which script is `activated and is running`.
+3. Whether a rule in the ⚙️ panel answers a request at that moment. Add a `500` rule on one endpoint,
+   reload, and say what status came back.
+4. What happens after you turn your own registration off and unregister the old worker: does the rule
+   answer then?
+5. Whether anything about your app breaks on the dev server with your worker off, for example a page
+   your app serves from its cache.
 
 ## Troubleshooting
 
@@ -562,7 +724,7 @@ npm test
 npm pack
 ```
 
-`npm test` runs 200 tests in 7 files. `npm pack` builds `dist/` first, then writes
+`npm test` runs 210 tests in 7 files. `npm pack` builds `dist/` first, then writes
 `dsquares-dev-mocks-0.3.1.tgz`. The build starts with `npm run build:css`: Tailwind 3 compiles
 `src/runtime/panel/panel.css` into `src/runtime/panel/styles.generated.ts`, a file git ignores. The panel
 puts that CSS inside its shadow root (a separate DOM tree that your app's CSS cannot reach). The build
