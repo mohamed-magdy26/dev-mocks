@@ -18,6 +18,7 @@ import {
   MISSING_BODY_TEXT,
   pathParts,
   PRESETS,
+  sequenceProgress,
   refusedSaveText,
   requestToForm,
   ruleToForm,
@@ -171,6 +172,21 @@ describe('the method, the sequence and the body condition', () => {
     expect(describeRule(formToRule(form({ sequenceOn: true, firstCalls: '2', laterKind: 'real' }))).meta).toContain(
       'first 2 calls, then the real server',
     )
+  })
+
+  it('counts how far a sequence rule has got, and says when the later answer took over', () => {
+    const rule = formToRule(form({ sequenceOn: true, firstCalls: '3', laterStatus: '404' }))
+    expect(sequenceProgress(rule, 0)).toEqual({ text: '0 of 3 calls used', switched: false })
+    expect(sequenceProgress(rule, 2)).toEqual({ text: '2 of 3 calls used', switched: false })
+    expect(sequenceProgress(rule, 3)).toEqual({ text: '3 of 3 used · answering 404 now', switched: true })
+    expect(sequenceProgress(rule, 9)).toEqual({ text: '3 of 3 used · answering 404 now', switched: true })
+    const toReal = formToRule(form({ sequenceOn: true, firstCalls: '1', laterKind: 'real' }))
+    expect(sequenceProgress(toReal, 0)).toEqual({ text: '0 of 1 call used', switched: false })
+    expect(sequenceProgress(toReal, 1)).toEqual({ text: '1 of 1 used · answering the real server now', switched: true })
+  })
+
+  it('shows no progress for a rule that answers the same way every time', () => {
+    expect(sequenceProgress(formToRule(form({})), 4)).toBeUndefined()
   })
 
   it('names the method in the rules list, and says ANY when the rule answers them all', () => {

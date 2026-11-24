@@ -1,9 +1,9 @@
 import { clsx } from 'clsx'
-import { useEffect, useState } from 'react'
-import type { MockConfig } from '../controller.js'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { callCounts, type MockConfig } from '../controller.js'
 import { FOCUS, ICON_BTN, LINK, NOTE } from './classes.js'
 import { Empty } from './Empty.js'
-import { describeRule, pathParts, plural } from './form.js'
+import { describeRule, pathParts, plural, sequenceProgress } from './form.js'
 import { EditIcon, TrashIcon } from './icons.js'
 
 const CONFIRM_MS = 3000
@@ -16,9 +16,10 @@ interface RuleListProps {
   onClearAll: () => void
 }
 
-function RuleRow(props: { rule: MockConfig; editing: boolean; onEdit: () => void; onRemove: () => void }) {
-  const { rule, editing, onEdit, onRemove } = props
+function RuleRow(props: { rule: MockConfig; used: number; editing: boolean; onEdit: () => void; onRemove: () => void }) {
+  const { rule, used, editing, onEdit, onRemove } = props
   const view = describeRule(rule)
+  const progress = sequenceProgress(rule, used)
   const path = rule.endpoints.join(', ')
   const { head, tail } = pathParts(path)
   // Two rules can share a path and differ only by method, so the method belongs in the label that
@@ -46,6 +47,11 @@ function RuleRow(props: { rule: MockConfig; editing: boolean; onEdit: () => void
           <span className="min-w-0 truncate">{tail}</span>
         </code>
         <span className="text-note text-faint">{view.meta}</span>
+        {/* No role="status": this changes on every request the rule answers, and a screen reader
+            would read the whole running count out over whatever the user is doing. */}
+        {progress && (
+          <span className={clsx('text-note', progress.switched ? 'text-amber' : 'text-faint')}>{progress.text}</span>
+        )}
       </span>
       <span className="flex gap-0.5">
         <button type="button" aria-label={`Edit rule for ${name}`} title="Edit" onClick={onEdit} className={clsx(ICON_BTN, FOCUS, 'hover:text-ink')}>
@@ -61,6 +67,9 @@ function RuleRow(props: { rule: MockConfig; editing: boolean; onEdit: () => void
 
 export function RuleList({ rules, editing, onEdit, onRemove, onClearAll }: RuleListProps) {
   const [armed, setArmed] = useState(false)
+  // Subscribed once for the whole list, and the rows below read their own counts out of the store.
+  // The value is a version number, not the counts: it only says that some count has moved.
+  useSyncExternalStore(callCounts.subscribe, callCounts.getSnapshot)
 
   useEffect(() => {
     if (!armed) return
@@ -91,6 +100,7 @@ export function RuleList({ rules, editing, onEdit, onRemove, onClearAll }: RuleL
                 <RuleRow
                   key={index}
                   rule={rule}
+                  used={callCounts.used(rule)}
                   editing={index === editing}
                   onEdit={() => onEdit(index)}
                   onRemove={() => onRemove(index)}

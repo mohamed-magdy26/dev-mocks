@@ -65,7 +65,9 @@ export function SequenceFields({ form, onChange }: FormProps) {
             <TipCase code="first 1 call">Gets the answer set above, such as 200 with your JSON.</TipCase>
             <TipCase code="every call after that">Gets what you set below, such as 500, or the real server.</TipCase>
           </TipCases>
-          <p>The count starts again on every page reload.</p>
+          <p>Every request counts, including the ones you do not see. In development React runs an effect
+          twice, so a page that fetches inside an effect sends two requests, and one page load uses two of
+          these calls. The count starts again on every page reload.</p>
         </InfoTip>
       </div>
 

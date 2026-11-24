@@ -1,4 +1,5 @@
 import type { JsonBodyType } from 'msw'
+import { notify } from './notify.js'
 
 const STORAGE_KEY = 'dev-mocks:rules'
 const PAUSED_KEY = 'dev-mocks:paused'
@@ -157,16 +158,50 @@ export function bodyHasValue(body: string, match: { field: string; value: string
   return String(found) === match.value
 }
 
-/** Everything that makes one rule: its method, its origin and its paths. */
-function callKey(config: MockConfig): string {
-  return `${slotKey(config)} ${config.endpoints.join(', ')}`
-}
-
 /**
- * How many times each rule has answered since this page loaded. In memory on purpose, and never
+ * How many times each rule has answered since this page loaded, keyed by `ruleKey` so a count
+ * belongs to the same rule the Requests tab labels its rows with. In memory on purpose, and never
  * stored: a reload starts every sequence again, so pressing F5 makes the next call a 1st call.
  */
 const calls = new Map<string, number>()
+const callListeners = new Set<() => void>()
+/**
+ * Counts the changes to the map above, never the calls themselves. `useSyncExternalStore` compares
+ * what `getSnapshot` returns, and it must return the same value until something really changes, so
+ * it cannot hand back the map, nor a copy of it built on every render.
+ */
+let callsVersion = 0
+
+function callsChanged() {
+  callsVersion += 1
+  notify(callListeners, 'call count')
+}
+
+function countCall(key: string): number {
+  const seen = (calls.get(key) ?? 0) + 1
+  calls.set(key, seen)
+  callsChanged()
+  return seen
+}
+
+function forgetCalls() {
+  if (calls.size === 0) return
+  calls.clear()
+  callsChanged()
+}
+
+/** How far each rule that answers in sequence has got, so the Active rules tab can show it. */
+export const callCounts = {
+  subscribe(listener: () => void) {
+    callListeners.add(listener)
+    return () => {
+      callListeners.delete(listener)
+    }
+  },
+  getSnapshot: () => callsVersion,
+  /** Calls this rule has answered since the page loaded. */
+  used: (rule: MockConfig) => calls.get(ruleKey(rule)) ?? 0,
+}
 
 /** Chrome, Firefox and Safari keep about 5 MB of localStorage per site, shared with the app's own data. */
 export const STORAGE_LIMIT_MB = 5
@@ -209,16 +244,14 @@ class ErrorMockController {
    */
   answerFor(config: MockConfig): MockAnswer {
     if (!config.firstCalls || !config.later) return config
-    const key = callKey(config)
-    const seen = (calls.get(key) ?? 0) + 1
-    calls.set(key, seen)
+    const seen = countCall(ruleKey(config))
     return seen <= config.firstCalls ? config : config.later
   }
 
   /** Also ends a pause: with no rules left, a saved pause would silently pause the next rule the user adds. */
   clearAll(): boolean {
     this.configs = []
-    calls.clear()
+    forgetCalls()
     const saved = this.saveToLocalStorage()
     if (saved && this.paused) this.setPaused(false)
     return saved

@@ -292,3 +292,22 @@ describe('requestLog', () => {
     expect(requestLog.body('a')).toEqual({ missing: 'not-recorded' })
   })
 })
+
+describe('a panel listener that throws', () => {
+  it('is reported and skipped, so the request being logged still goes through', () => {
+    const complained = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const good = vi.fn()
+    const stopBad = requestLog.subscribe(() => {
+      throw new Error('panel is broken')
+    })
+    const stopGood = requestLog.subscribe(good)
+    expect(() => requestLog.start(new Request('https://api.test/api/menu'), 'z')).not.toThrow()
+    // The listener added after the broken one still ran, and the row is in the log.
+    expect(good).toHaveBeenCalled()
+    expect(requestLog.getSnapshot().some((entry) => entry.id === 'z')).toBe(true)
+    expect(complained).toHaveBeenCalled()
+    stopBad()
+    stopGood()
+    complained.mockRestore()
+  })
+})

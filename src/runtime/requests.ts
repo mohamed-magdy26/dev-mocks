@@ -1,5 +1,6 @@
 import { errorController, MEGABYTE, ruleKey, type MockConfig } from './controller.js'
 import { NULL_BODY_STATUSES, takeDecision } from './handlers.js'
+import { notify } from './notify.js'
 
 const STORAGE_KEY = 'dev-mocks:requests'
 const LIMIT = 100
@@ -125,7 +126,7 @@ function save() {
 function commit(next: LoggedRequest[]) {
   entries = next
   saveTimer ??= setTimeout(save, SAVE_DELAY_MS)
-  for (const listener of listeners) listener()
+  notify(listeners, 'request log')
 }
 
 /** The Requests tab's data. Its methods read no `this`, so they can be passed around as callbacks. */

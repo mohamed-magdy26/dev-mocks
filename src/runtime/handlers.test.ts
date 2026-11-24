@@ -1,6 +1,6 @@
 import { getResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { errorController } from './controller.js'
+import { callCounts, errorController } from './controller.js'
 import { handleRequest, handlers, takeDecision } from './handlers.js'
 
 const request = (url: string) => new Request(url)
@@ -48,6 +48,32 @@ describe('handlers', () => {
     expect((await call())?.status).toBe(500)
     expect((await call())?.status).toBe(500)
     expect(await call()).toBeUndefined()
+  })
+
+  it('tells the Active rules tab how many calls a rule has answered, and wakes it on each one', async () => {
+    const rule = {
+      scenario: 'custom' as const,
+      endpoints: ['/api/orders'],
+      customStatusCode: 200,
+      firstCalls: 2,
+      later: { scenario: 'custom' as const, customStatusCode: 500 },
+    }
+    errorController.addConfig(rule)
+    const woken = vi.fn()
+    const stop = callCounts.subscribe(woken)
+    expect(callCounts.used(rule)).toBe(0)
+    const call = () => getResponse(handlers, request('https://api.test/api/orders'))
+    await call()
+    await call()
+    expect(callCounts.used(rule)).toBe(2)
+    expect(woken).toHaveBeenCalledTimes(2)
+    // Every call past the first ones still counts, so the row keeps saying the later answer is live.
+    await call()
+    expect(callCounts.used(rule)).toBe(3)
+    errorController.clearAll()
+    expect(callCounts.used(rule)).toBe(0)
+    expect(woken).toHaveBeenCalledTimes(4)
+    stop()
   })
 
   it('counts each method and each server on its own, so one sequence never spends another', async () => {

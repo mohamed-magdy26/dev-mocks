@@ -383,11 +383,27 @@ export function liftPastedOrigin(form: FormState): FormState | undefined {
   }
 }
 
+/** What the rule answers once its first calls are used up: a status code, or the real server. */
+function laterLabel(later: MockAnswer): string {
+  return later.scenario === 'none' ? 'the real server' : String(later.customStatusCode || FALLBACK_STATUS)
+}
+
 /** Says what changes after the first calls, or nothing at all when the rule never changes. */
 function sequenceLabel(rule: MockConfig): string {
   if (!rule.firstCalls || !rule.later) return ''
-  const after = rule.later.scenario === 'none' ? 'the real server' : String(rule.later.customStatusCode || FALLBACK_STATUS)
-  return ` · first ${plural(rule.firstCalls, 'call')}, then ${after}`
+  return ` · first ${plural(rule.firstCalls, 'call')}, then ${laterLabel(rule.later)}`
+}
+
+/**
+ * How far a rule that answers in sequence has got, for the row in the Active rules tab. `used` is
+ * how many calls it has answered since the page loaded. `switched` is true once the first calls are
+ * spent and the later answer is the one being given, which the row shows in amber. A rule that
+ * answers the same way every time has no progress to show, and gets undefined.
+ */
+export function sequenceProgress(rule: MockConfig, used: number): { text: string; switched: boolean } | undefined {
+  if (!rule.firstCalls || !rule.later) return undefined
+  if (used < rule.firstCalls) return { text: `${used} of ${plural(rule.firstCalls, 'call')} used`, switched: false }
+  return { text: `${rule.firstCalls} of ${rule.firstCalls} used · answering ${laterLabel(rule.later)} now`, switched: true }
 }
 
 export interface RuleView {
