@@ -1,7 +1,7 @@
-﻿# @dsquares/dev-mocks
+# @dsquares/dev-mocks
 
 When you test how your React app handles a failing API, you usually need the backend to fail on purpose.
-This package adds a âš™ï¸ button to your app while the dev server runs. In that panel, you choose a request
+This package adds a ⚙️ button to your app while the dev server runs. In that panel, you choose a request
 path, for example `/api/orders/*`, and what should happen, for example "500 error" or "Delay only". After
 the page reloads, every request to that path gets the answer you chose. The backend and your app code stay
 unchanged.
@@ -34,20 +34,20 @@ npm run dev
 
 If your app starts with `npm start`, run that instead of `npm run dev`. Then try it in the browser:
 
-1. Open your app. A âš™ï¸ tab appears on the right edge of the page, near the bottom.
-2. Click âš™ï¸, open the "Requests" tab, and click any API request.
+1. Open your app. A ⚙️ tab appears on the right edge of the page, near the bottom.
+2. Click ⚙️, open the "Requests" tab, and click any API request.
 3. Click the "500 error" card, then click "Save & reload".
 
 After the reload, that request answers with status 500, and your app shows its error state.
 
-- No âš™ï¸ button? See [Troubleshooting](#troubleshooting).
+- No ⚙️ button? See [Troubleshooting](#troubleshooting).
 - To remove the package, see [Remove the setup](#remove-the-setup).
 
 ## Install
 
 The first command above downloads the built package from the `v0.3.1` release of
 [mohamed-magdy26/dev-mocks](https://github.com/mohamed-magdy26/dev-mocks), and it needs no GitHub login.
-The second command, `npx dev-mocks init`, connects the package to your app. Without it, the âš™ï¸ button
+The second command, `npx dev-mocks init`, connects the package to your app. Without it, the ⚙️ button
 never appears.
 
 The first command writes that URL into `package.json`, so `npm ci` works on CI and on every other laptop,
@@ -60,13 +60,13 @@ This walk uses a real run in a Vite 4 repo. The terminal shows these
 lines. npm and MSW print their own lines between the `$` lines, and they are left out here.
 
 ```
-âœ” entry: src/main.tsx
+✔ entry: src/main.tsx
 $ npm install -D "msw@^2"
 $ npx msw init public --save
-âœ” MSW worker file written to public/mockServiceWorker.js
-âœ” wrapped the render call in src/main.tsx:13
+✔ MSW worker file written to public/mockServiceWorker.js
+✔ wrapped the render call in src/main.tsx:13
 
-Done. Start your dev server. A âš™ï¸ tab appears on the right edge of the page, near the bottom.
+Done. Start your dev server. A ⚙️ tab appears on the right edge of the page, near the bottom.
 ```
 
 | When this happens | `init` does this |
@@ -82,12 +82,12 @@ These files change in the repo:
 
 ```
 my-app/
-â”œâ”€â”€ package.json             â† "msw" and "@dsquares/dev-mocks" in devDependencies, and the new "msw" field
-â”œâ”€â”€ package-lock.json        â† updated by npm
-â”œâ”€â”€ public/
-â”‚   â””â”€â”€ mockServiceWorker.js â† new file, written by MSW
-â””â”€â”€ src/
-    â””â”€â”€ main.tsx             â† one new import, and the render call is wrapped
+├── package.json             ← "msw" and "@dsquares/dev-mocks" in devDependencies, and the new "msw" field
+├── package-lock.json        ← updated by npm
+├── public/
+│   └── mockServiceWorker.js ← new file, written by MSW
+└── src/
+    └── main.tsx             ← one new import, and the render call is wrapped
 ```
 
 This is the real change in `src/main.tsx`:
@@ -153,17 +153,17 @@ relative path, such as `./bootstrap`. It checks one level deep only.
 | `--help`, `-h` | Prints the usage text. | `npx dev-mocks init --help` |
 
 Running `init` a second time is safe. When the render file already imports `@dsquares/dev-mocks`, `init`
-prints `âœ” src/main.tsx already calls startDevMocks()` and does not edit the file again.
+prints `✔ src/main.tsx already calls startDevMocks()` and does not edit the file again.
 
-## Use the âš™ï¸ panel
+## Use the ⚙️ panel
 
 This walk is a real trial in a Vite repo, on its dev server. It makes the menu
 request answer 3 seconds late, with the real server's answer.
 
 1. In a terminal at the repo root, start your dev server, for example with `npm run dev`.
 2. In the browser, open the app. In the DevTools Console tab, you see `[MSW] Mocking enabled.` On the
-   right edge of the page, you see the âš™ï¸ tab with the number of active rules under the gear.
-3. On the page, click âš™ï¸. The "Dev Mocks" panel opens beside the tab. It has two tabs, "Rules" and
+   right edge of the page, you see the ⚙️ tab with the number of active rules under the gear.
+3. On the page, click ⚙️. The "Dev Mocks" panel opens beside the tab. It has two tabs, "Rules" and
    "Requests".
 4. In the panel, open the "Requests" tab. It lists every `fetch` and `XMLHttpRequest` call the app made,
    newest first. Click the row `GET /api/menu`. The panel switches to the "Rules" tab, and the
@@ -184,19 +184,19 @@ To change a rule, click the pencil next to it under "Active rules", then click "
 a rule, click the bin next to it. To stop every rule, click "Remove all", then click it a second time
 within 3 seconds to confirm. Each of these actions reloads the page.
 
-### Move, hide and pause the âš™ï¸ tab
+### Move, hide and pause the ⚙️ tab
 
-The âš™ï¸ tab can cover part of your app, so the panel lets you move it, hide it and pause its rules.
+The ⚙️ tab can cover part of your app, so the panel lets you move it, hide it and pause its rules.
 The panel saves each choice in the browser's localStorage, so the choice stays after a reload.
 
 | When you do this | The panel does this |
 |---|---|
-| On the page, drag âš™ï¸ and let go | The tab jumps to the left or right edge, near the top or the bottom, whichever is nearest to where you let go. The panel then opens beside the tab. The panel saves the place under `dev-mocks:corner`. |
+| On the page, drag ⚙️ and let go | The tab jumps to the left or right edge, near the top or the bottom, whichever is nearest to where you let go. The panel then opens beside the tab. The panel saves the place under `dev-mocks:corner`. |
 | In the panel's header, click the four-arrow button | The tab moves to the next place, clockwise: bottom right, bottom left, top left, top right. This does the same as a drag, and it works from the keyboard. |
 | In the panel's header, click the crossed-out eye | The panel closes and the tab disappears. The panel saves `dev-mocks:hidden`. |
 | Anywhere on the page, press Alt+Shift+M | The tab disappears, or comes back when it was hidden. |
 | In the panel's header, turn off the "Mock rules" switch | The page reloads. Every request goes to the real server, and the rules stay in the list. Turn the switch on again to use them. The panel saves `dev-mocks:paused`. "Remove all" also turns the switch back on. |
-| Keep the mouse away from âš™ï¸ | The tab turns 25% transparent, and 6 px of it slides behind the screen edge. It turns solid and slides out when the mouse comes within 96 px of it, when the panel is open, or when the tab has keyboard focus. |
+| Keep the mouse away from ⚙️ | The tab turns 25% transparent, and 6 px of it slides behind the screen edge. It turns solid and slides out when the mouse comes within 96 px of it, when the panel is open, or when the tab has keyboard focus. |
 
 While the tab is hidden, a thin bar stays on the screen edge where the tab was. The bar has a different
 shape and colour in each state, so the state is readable without colour:
@@ -207,8 +207,8 @@ shape and colour in each state, so the state is readable without colour:
 | The rules are paused | An amber bar split in two, like a pause sign. |
 | There is no rule | A short grey stub. |
 
-Hover the bar to read "2 rules active Â· click or press Alt+Shift+M to show the dev mocks tab" (or
-"2 rules paused Â· â€¦", or "0 rules Â· â€¦"), and click the bar to bring the tab back.
+Hover the bar to read "2 rules active · click or press Alt+Shift+M to show the dev mocks tab" (or
+"2 rules paused · …", or "0 rules · …"), and click the bar to bring the tab back.
 
 In 0.3.1 the default shortcut changed from Alt+Shift+D to Alt+Shift+M, because the Dark Reader browser
 extension uses Alt+Shift+D.
@@ -283,7 +283,7 @@ and a rule can mock them.
 | `failed` | The request failed, for example because of a "Network down" rule. |
 
 In the "Filter by URL" box, type part of a URL to keep only the rows that contain it. Tick "Invert" to
-keep only the rows that do not contain it. The âŠ˜ button empties the list.
+keep only the rows that do not contain it. The ⊘ button empties the list.
 
 When you click a row that a rule answered with a mocked response, the panel opens that rule for editing.
 When you click any other row, the panel puts the row's path into "Request path". When the request had a
@@ -350,27 +350,27 @@ A comma inside a query stays part of that path, so `https://host/api/products?id
 You pass the options in your render file, in the call that `init` wrote.
 
 ```tsx
-// Keep the call in the file, but turn the mocks off. No MSW, no âš™ï¸ button.
+// Keep the call in the file, but turn the mocks off. No MSW, no ⚙️ button.
 startDevMocks({ enabled: false }).then(() => { /* render */ })
 
 // The app runs under a base path, so the dev server serves the worker file at /checkout/mockServiceWorker.js.
 startDevMocks({ serviceWorkerUrl: '/checkout/mockServiceWorker.js' }).then(() => { /* render */ })
 
-// A browser extension already uses Alt+Shift+M, so Ctrl+Alt+K hides and shows the âš™ï¸ tab instead.
+// A browser extension already uses Alt+Shift+M, so Ctrl+Alt+K hides and shows the ⚙️ tab instead.
 startDevMocks({ shortcut: 'Ctrl+Alt+K' }).then(() => { /* render */ })
 ```
 
 You need `serviceWorkerUrl` when your app runs under a base path, for example Vite's `base: '/checkout/'`.
 Without it, MSW looks for `/mockServiceWorker.js` and gets a 404. Then the console shows
-`[dev-mocks] Mocks are off because MSW failed to start.` and the âš™ï¸ button does not appear.
+`[dev-mocks] Mocks are off because MSW failed to start.` and the ⚙️ button does not appear.
 
 `shortcut` joins one or more of `Ctrl`, `Alt`, `Shift` and `Meta` with `+` to one letter, one digit, or
-one of `F1` to `F12`. `Meta` is the âŒ˜ key on a Mac. The shortcut needs at least `Ctrl`, `Alt` or `Meta`,
+one of `F1` to `F12`. `Meta` is the ⌘ key on a Mac. The shortcut needs at least `Ctrl`, `Alt` or `Meta`,
 so that typing in a text field never fires it. When the text breaks these rules, for example `'Shift+D'`,
 the console shows `[dev-mocks] The shortcut "Shift+D" is not valid, so Alt+Shift+M is used.` and the
 panel keeps Alt+Shift+M. You can also write `Option` for `Alt`, `Control` for `Ctrl`, and `Cmd` or
 `Command` for `Meta`. On Windows, AltGr never fires the shortcut, because AltGr types characters. On a
-Mac, Option+Shift+M types `Ã‚` in a text field, and the panel takes that key press for the shortcut.
+Mac, Option+Shift+M types `Â` in a text field, and the panel takes that key press for the shortcut.
 
 ## Production builds
 
@@ -408,7 +408,7 @@ If you already committed the changes, undo them by hand:
 
 ## When `init` stops
 
-When `init` stops, it prints a line that starts with `âœ–` and exits with code 1. Every stop in this list
+When `init` stops, it prints a line that starts with `✖` and exits with code 1. Every stop in this list
 happens before `init` edits a source file.
 
 | The message starts with | Why `init` stopped | What you do |
@@ -461,7 +461,7 @@ file exists.
 
 ## Troubleshooting
 
-**The âš™ï¸ button does not appear, and the console shows `[dev-mocks] Mocks are off because MSW failed to
+**The ⚙️ button does not appear, and the console shows `[dev-mocks] Mocks are off because MSW failed to
 start.`** In the browser, open `http://localhost:5173/mockServiceWorker.js`, with your own port. When the
 browser shows your app's HTML or a 404 instead of JavaScript, the worker file is missing or sits at
 another path. Run `npx dev-mocks init` again at the repo root. For an app under a base path, set
@@ -494,6 +494,22 @@ npm pack
 puts that CSS inside its shadow root (a separate DOM tree that your app's CSS cannot reach). The build
 turns every `rem` into `px`, so the panel keeps its size even when your app changes the `<html>` font size. Raise `"version"` in `package.json` before you share a changed build, so
 teammates can tell the two files apart.
+
+### Try the panel in the example app
+
+The `example/` folder holds a small invented shop page. Its dev server answers `GET /api/orders` and
+`GET /api/orders/:id` with invented orders after a 300 ms wait, so the panel has real requests to mock or let
+through. You start it in one of two ways, at the root of this package:
+
+| Command | What runs | Port | Use it |
+|---|---|---|---|
+| `npm run example` | The page imports the package from `src/`. When you save a file in `src/`, the page reloads. When you save a panel file, the panel CSS is rebuilt first. | 5173 | Every day, while you change the package. |
+| `npm run example:packed` | The script runs `npm pack`, copies `example/` into `.example-packed/`, installs the new `.tgz` there, and runs `npx dev-mocks init` on that copy. Then Vite starts the copy. | 5174 | Before a release, to prove that the `.tgz` installs and that `init` works. |
+
+`example/src/main.tsx` stays a plain render call on disk, which is how an app looks before `init`. In the
+first mode, a Vite plugin in `example/vite.config.ts` wraps that call in `startDevMocks()` in memory. In
+the second mode, `init` wraps the call in the copy, the same way it does in a real app. Git ignores
+`.example-packed/`.
 
 To publish a version, push a tag such as `v0.2.1` from this repo. Then, on the repo's "Releases" page
 on github.com, create a release from that tag and upload the `.tgz` file that `npm pack` wrote. The
