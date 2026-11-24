@@ -118,6 +118,77 @@ describe('wrapRender', () => {
       ]),
     )
   })
+
+  it('indents with a tab when the file is indented with tabs', () => {
+    const input = lf([
+      "import { createRoot } from 'react-dom/client';",
+      '',
+      'function main() {',
+      '\tconsole.log("ready");',
+      '}',
+      '',
+      'createRoot(document.getElementById("root")!).render(',
+      '\t<App />',
+      ');',
+      '',
+    ])
+    const output = wrap(input)
+    expect(output).toContain('startDevMocks().then(() => {\n\tcreateRoot(')
+    expect(output).not.toContain('\n  createRoot(')
+  })
+
+  it('ignores a block comment when measuring the indentation', () => {
+    // The second line of a JSDoc comment starts with one space before its `*`. Measuring that line
+    // would indent the wrapped call by a single space, in a file indented with four.
+    const input = lf([
+      "import { createRoot } from 'react-dom/client';",
+      '',
+      '/**',
+      ' * Starts the app.',
+      ' */',
+      'function ready() {',
+      '    console.log("ready");',
+      '}',
+      '',
+      'createRoot(document.getElementById("root")!).render(',
+      '    <App />',
+      ');',
+      '',
+    ])
+    const output = wrap(input)
+    expect(output).toContain('startDevMocks().then(() => {\n    createRoot(')
+    expect(output).not.toContain('\n createRoot(')
+  })
+
+  it('ignores a tab typed inside a template string when measuring the indentation', () => {
+    const input = lf([
+      "import { createRoot } from 'react-dom/client';",
+      '',
+      'const help = `usage:',
+      '\tdev-mocks init`;',
+      '',
+      'createRoot(document.getElementById("root")!).render(',
+      '  <App />',
+      ');',
+      '',
+    ])
+    const output = wrap(input)
+    expect(output).toContain('startDevMocks().then(() => {\n  createRoot(')
+    expect(output).not.toContain('\n\tcreateRoot(')
+  })
+
+  it('leaves the lines inside a multi-line template string alone', () => {
+    const input = lf([
+      "import { createRoot } from 'react-dom/client';",
+      '',
+      'createRoot(document.getElementById("root")!).render(',
+      '  <pre>{`line one',
+      'line two`}</pre>',
+      ');',
+      '',
+    ])
+    expect(wrap(input)).toContain('\nline two`}</pre>')
+  })
 })
 
 describe('findRenderStatements', () => {
