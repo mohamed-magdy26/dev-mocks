@@ -1,6 +1,6 @@
 import { clsx } from 'clsx'
-import { useEffect, useState, useSyncExternalStore } from 'react'
-import { callCounts, ruleKey, type MockConfig } from '../controller.js'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { callCounts, compareSpecificity, ruleKey, type MockConfig } from '../controller.js'
 import { FOCUS, ICON_BTN, LINK, NOTE } from './classes.js'
 import { Empty } from './Empty.js'
 import { describeRule, pathParts, plural, sequenceProgress } from './form.js'
@@ -115,14 +115,28 @@ export function RuleList({ rules, editing, onEdit, onRemove, onTogglePause, onCl
     return () => clearTimeout(timer)
   }, [armed])
 
-  const newestFirst = rules.map((rule, index) => ({ rule, index })).reverse()
+  // Reversed first, then sorted: `sort` keeps equal items in the order it found them, so rules that
+  // are equally specific stay newest first, which is also how the matcher decides between them.
+  // Held across renders because the subscription above re-renders this list on every mocked request,
+  // and the order cannot have changed: saving, pausing or removing a rule reloads the page.
+  const byPriority = useMemo(
+    () =>
+      rules
+        .map((rule, index) => ({ rule, index }))
+        .reverse()
+        .sort((a, b) => compareSpecificity(a.rule, b.rule)),
+    [rules],
+  )
 
   return (
     <>
       {/* The tab above already names this list and counts it, so only the ordering needs saying. */}
       {rules.length > 1 && (
         <div className="flex justify-end">
-          <span className={NOTE}>newest first, the newest wins</span>
+          {/* No promise about which rule answers a given request: this list ranks a rule by its most
+              specific path, while a request is answered by the rule whose matching path is the most
+              specific, and the two differ for a rule that holds several paths. */}
+          <span className={NOTE}>most specific first</span>
         </div>
       )}
       <div className="flex flex-col gap-2">
@@ -134,7 +148,7 @@ export function RuleList({ rules, editing, onEdit, onRemove, onTogglePause, onCl
         ) : (
           <>
             <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-              {newestFirst.map(({ rule, index }) => (
+              {byPriority.map(({ rule, index }) => (
                 <RuleRow
                   key={index}
                   rule={rule}

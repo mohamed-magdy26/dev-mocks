@@ -166,6 +166,103 @@ export function bodyHasValue(body: string, match: { field: string; value: string
 }
 
 /**
+ * The parts of a path that carry a name: `/api/orders` is two, `/api/orders/*` is also two because
+ * the `*` names nothing, and the root path `/` is none.
+ */
+function segmentCount(path: string): number {
+  return path
+    .replace(/\/\*$/, '')
+    .split('/')
+    .filter(Boolean).length
+}
+
+/**
+ * How specific one rule is about one of its own paths, as six numbers that are compared one by one,
+ * in this order, where the bigger number is the more specific rule:
+ *
+ * | Position | 1 means | 0 means |
+ * |---|---|---|
+ * | 1. how long the path is | the count of named parts, so `/api/v1/orders` is 3 and beats `/orders` | the `*` of a `/*` path is not one of them |
+ * | 2. the path's shape | it names the path, `/api/orders` | it ends in `/*` and covers everything below |
+ * | 3. the query | "Match the full URL" is on, so the query has to be the typed one | any query answers |
+ * | 4. the body | the rule answers one field and value only | any body answers |
+ * | 5. the method | the rule answers GET only, or POST only | any method answers |
+ * | 6. the origin | the rule answers one server only | every server answers |
+ *
+ * Position 3 counts only for a path that does not end in `/*`, because the matcher below ignores the
+ * query of a `/*` path, and a number that stands for a condition nobody applies would decide a
+ * contest it takes no part in.
+ */
+function endpointRank(config: MockConfig, pattern: { path: string; query: string }): number[] {
+  const coversEverythingBelow = pattern.path.endsWith('/*')
+  return [
+    segmentCount(pattern.path),
+    coversEverythingBelow ? 0 : 1,
+    config.matchFullUrl && !coversEverythingBelow ? 1 : 0,
+    config.bodyMatch ? 1 : 0,
+    config.matchMethod && config.method ? 1 : 0,
+    config.matchOrigin && config.origin ? 1 : 0,
+  ]
+}
+
+/** True when `a` is the more specific of the two. Two ranks that are equal all the way down give false. */
+function isMoreSpecific(a: number[], b: number[]): boolean {
+  for (let at = 0; at < a.length; at += 1) {
+    if (a[at] !== b[at]) return a[at] > b[at]
+  }
+  return false
+}
+
+/** The most specific of a rule's own paths, which is the one the Active rules list orders it by. */
+function bestRank(config: MockConfig): number[] {
+  let best = [0, 0, 0, 0, 0, 0]
+  for (const endpoint of config.endpoints) {
+    const pattern = parseEndpoint(endpoint)
+    if (!pattern) continue
+    const rank = endpointRank(config, pattern)
+    if (isMoreSpecific(rank, best)) best = rank
+  }
+  return best
+}
+
+/**
+ * Orders two rules for the Active rules list, most specific first. It ranks a rule by its most
+ * specific path, so a rule holding `/api/orders` and `/api/*` is placed by the first of the two.
+ */
+export function compareSpecificity(a: MockConfig, b: MockConfig): number {
+  const [left, right] = [bestRank(a), bestRank(b)]
+  if (isMoreSpecific(left, right)) return -1
+  return isMoreSpecific(right, left) ? 1 : 0
+}
+
+/**
+ * How specific the rule is about this very request, or undefined when it does not answer it at all.
+ * Every test that can refuse the request lives here, so the matcher cannot accept a request on one
+ * path and then rank it by another.
+ */
+function rankForRequest(config: MockConfig, url: URL, method: string, body?: string): number[] | undefined {
+  // First, so a paused rule never shadows a live one.
+  if (config.paused) return undefined
+  // Do not remove the `config.origin` test: rules saved before this field existed have no origin,
+  // and must keep matching every origin instead of matching nothing.
+  if (config.matchOrigin && config.origin && url.origin !== config.origin) return undefined
+  // Gated on the switch, like the origin above: a rule saved before these fields existed has
+  // neither, so it keeps answering every method.
+  if (config.matchMethod && config.method && method.toUpperCase() !== config.method) return undefined
+  if (config.bodyMatch && body !== undefined && !bodyHasValue(body, config.bodyMatch)) return undefined
+  let best: number[] | undefined
+  for (const endpoint of config.endpoints) {
+    const pattern = parseEndpoint(endpoint)
+    if (!pattern || !matchesPath(url.pathname, pattern.path)) continue
+    const coversEverythingBelow = pattern.path.endsWith('/*')
+    if (config.matchFullUrl && !coversEverythingBelow && url.search !== pattern.query) continue
+    const rank = endpointRank(config, pattern)
+    if (!best || isMoreSpecific(rank, best)) best = rank
+  }
+  return best
+}
+
+/**
  * How many times each rule has answered since this page loaded, keyed by `ruleKey` so a count
  * belongs to the same rule the Requests tab labels its rows with. In memory on purpose, and never
  * stored: a reload starts every sequence again, so pressing F5 makes the next call a 1st call.
@@ -265,8 +362,11 @@ class ErrorMockController {
   }
 
   /**
-   * When several rules match, the rule added last wins, so a rule the user just saved always takes
-   * effect. While paused, no rule matches.
+   * When several rules match one request, the most specific of them answers it, as `endpointRank`
+   * above lays out: a path that names more parts beats a shorter one, a path that names its last
+   * part beats one ending in `/*`, and a rule that pins the query, the body, the method or the
+   * origin beats one that does not. Rules that are equal all the way down are decided by the one added last, so saving a
+   * rule still takes effect over an identical older one. While paused, no rule matches.
    *
    * `body` is the request body as text, and the request handler always passes it, even as `''` for a
    * request that has none. Leaving it out means "I do not have the body": the Requests tab's logger
@@ -276,23 +376,18 @@ class ErrorMockController {
   getConfigForRequest(request: Request, body?: string): MockConfig | undefined {
     if (this.paused) return undefined
     const url = new URL(request.url)
-    return [...this.configs].reverse().find((config) => {
-      // First, so a paused rule never shadows a live one below it in the list.
-      if (config.paused) return false
-      // Do not remove the `config.origin` test: rules saved before this field existed have no origin,
-      // and must keep matching every origin instead of matching nothing.
-      if (config.matchOrigin && config.origin && url.origin !== config.origin) return false
-      // Gated on the switch, like the origin above: a rule saved before these fields existed has
-      // neither, so it keeps answering every method.
-      if (config.matchMethod && config.method && request.method.toUpperCase() !== config.method) return false
-      if (config.bodyMatch && body !== undefined && !bodyHasValue(body, config.bodyMatch)) return false
-      return config.endpoints.some((endpoint) => {
-        const rule = parseEndpoint(endpoint)
-        if (!rule || !matchesPath(url.pathname, rule.path)) return false
-        if (!config.matchFullUrl || rule.path.endsWith('/*')) return true
-        return url.search === rule.query
-      })
-    })
+    let winner: MockConfig | undefined
+    let winningRank: number[] | undefined
+    for (const config of this.configs) {
+      const rank = rankForRequest(config, url, request.method, body)
+      if (rank === undefined) continue
+      // The walk runs oldest to newest, and a rule only keeps its place by being strictly more
+      // specific, so the newer of two rules that rank the same takes over from the older one.
+      if (winningRank && isMoreSpecific(winningRank, rank)) continue
+      winner = config
+      winningRank = rank
+    }
+    return winner
   }
 
   /**
@@ -309,7 +404,7 @@ class ErrorMockController {
 
   /**
    * Pauses one rule, or starts it again, leaving it where it stands in the list. It is edited in
-   * place on purpose: the list order decides which rule wins when two of them match one request, and
+   * place on purpose: the list order still decides between two rules that are equally specific, and
    * going through `addConfig` would push the rule to the end and quietly change that order.
    * Returns false when the browser refused to store the list.
    */

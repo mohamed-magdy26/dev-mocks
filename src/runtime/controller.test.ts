@@ -101,10 +101,80 @@ describe('errorController.getConfigForRequest', () => {
     expect(errorController.getConfigForRequest(request(orders.replace('Page=1', 'Page=2')))).toBeUndefined()
   })
 
-  it('lets the rule added last win when two rules match', () => {
-    errorController.addConfig({ scenario: '500', endpoints: ['/Users'] })
+  it('lets the longer path win, whichever rule was added first', () => {
     errorController.addConfig({ scenario: '404', endpoints: ['/api/v1/Users'] })
+    errorController.addConfig({ scenario: '500', endpoints: ['/Users'] })
     expect(errorController.getConfigForRequest(request('https://api.test/api/v1/Users'))?.scenario).toBe('404')
+  })
+
+  it('lets a deeper /* wildcard win over a short named path', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/v1/orders/*'] })
+    errorController.addConfig({ scenario: '404', endpoints: ['/orders'] })
+    // `/orders` names its path, but it names one part and matches any path ending that way, while the
+    // wildcard names three. The count of named parts is read before the path's shape.
+    expect(errorController.getConfigForRequest(request('https://api.test/api/v1/orders'))?.scenario).toBe('500')
+  })
+
+  it('lets a named path win over a /* wildcard of the same length added after it', () => {
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/orders'] })
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders/*'] })
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders'))?.scenario).toBe('404')
+  })
+
+  it('lets a rule that pins the query win over one on the same path that ignores it', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders?reload=0'], matchFullUrl: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/orders'] })
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders?reload=0'))?.scenario).toBe('500')
+  })
+
+  it('leaves a request the pinned query does not cover to the broader rule', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders?reload=0'], matchFullUrl: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/orders'] })
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders'))?.scenario).toBe('404')
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders?reload=1'))?.scenario).toBe('404')
+  })
+
+  it('lets a rule that pins the method win over one that answers every method', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/orders'], method: 'POST', matchMethod: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/orders'] })
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders', 'POST'))?.scenario).toBe('500')
+    expect(errorController.getConfigForRequest(request('https://api.test/api/orders'))?.scenario).toBe('404')
+  })
+
+  it('lets a rule that pins the body win over one that answers every body', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/coupons'], bodyMatch: { field: 'code', value: 'USED' } })
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/coupons'] })
+    const used = errorController.getConfigForRequest(request('https://api.test/api/coupons'), '{"code":"USED"}')
+    expect(used?.scenario).toBe('500')
+    const fresh = errorController.getConfigForRequest(request('https://api.test/api/coupons'), '{"code":"NEW"}')
+    expect(fresh?.scenario).toBe('404')
+  })
+
+  it('lets a rule that pins the origin win over one that answers every server', () => {
+    errorController.addConfig({
+      scenario: '500',
+      endpoints: ['/v1/orders'],
+      origin: 'https://eu.api.test',
+      matchOrigin: true,
+    })
+    errorController.addConfig({ scenario: '404', endpoints: ['/v1/orders'] })
+    expect(errorController.getConfigForRequest(request('https://eu.api.test/v1/orders'))?.scenario).toBe('500')
+    expect(errorController.getConfigForRequest(request('https://us.api.test/v1/orders'))?.scenario).toBe('404')
+  })
+
+  it('ranks a rule by the path that matched, not by its most specific path', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/v1/deep/orders', '/cart/*'] })
+    errorController.addConfig({ scenario: '404', endpoints: ['/cart'] })
+    // The first rule matches `/cart` through its `/cart/*` path, and that is the path it is ranked by,
+    // so the named `/cart` of the second rule beats it. Its own deeper path takes no part here.
+    expect(errorController.getConfigForRequest(request('https://api.test/cart'))?.scenario).toBe('404')
+    expect(errorController.getConfigForRequest(request('https://api.test/api/v1/deep/orders'))?.scenario).toBe('500')
+  })
+
+  it('lets the rule added last win when two rules are equally specific', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/a/*'] })
+    errorController.addConfig({ scenario: '404', endpoints: ['/b/*'] })
+    expect(errorController.getConfigForRequest(request('https://api.test/a/b/c'))?.scenario).toBe('404')
   })
 
   it('ignores a trailing slash on the rule and on the request', () => {

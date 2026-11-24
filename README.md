@@ -198,9 +198,9 @@ rule's own row pauses **that one rule**, and leaves the others answering.
 | Click the pencil on a paused rule, then "Update & reload" | The rule answers again. Saving an edit always resumes a rule, because the page reloads straight afterwards and you would otherwise see no change. |
 | Click the bin on a paused rule | The rule is deleted, exactly as for a live rule. |
 
-The rule keeps its place in the list, so pausing never changes which rule wins when two rules match
-the same request. The panel stores the flag inside the rule itself, in `dev-mocks:rules`, as
-`"paused": true`.
+Pausing never changes which of your other rules answers a request, because the panel picks the most
+specific matching rule rather than the newest one. The panel stores the flag inside the rule itself, in
+`dev-mocks:rules`, as `"paused": true`.
 
 **An invented example**, because this repo has no saved case to quote. You have two rules:
 
@@ -438,10 +438,43 @@ PUT, PATCH and DELETE alike. Pick one method and the rule answers that one only,
 the "Requests" tab arrives with the method that request used, already picked. Either way the rule answers
 both `fetch` and `XMLHttpRequest`, which is what axios uses.
 
-When two rules match the same request, the rule you added last wins. Editing a rule counts as adding it
-again. When you add a rule with an endpoint that an older rule already has, the new rule takes that
-endpoint from the older one. Two rules that differ only by method do not take endpoints from each other,
-because they never answer the same request.
+### Which rule answers when two of them match
+
+When two rules match the same request, the more specific of the two answers it. The order you saved them
+in does not matter. The panel compares the two rules test by test, in this order, and the first test that
+tells them apart decides it:
+
+| | The more specific rule | The less specific rule |
+|---|---|---|
+| 1. The path's length | more named parts, `/api/v1/Users` | fewer, `/Users`. The `*` of a `/*` path is not a named part |
+| 2. The path's shape | names its last part, `/api/orders` | ends in `/*`, so it covers everything below |
+| 3. The query | has "Match the full URL" on | answers any query |
+| 4. The body | answers one field and value only | answers any body |
+| 5. The method | answers GET only, or POST only | answers any method |
+| 6. The server | answers one origin only | answers every origin |
+| 7. Still equal | the rule you saved last | the older one |
+
+The "Active rules" list is drawn in that same order, most specific at the top. The list has no request to
+rank against, so it ranks a rule that holds several paths by the most specific of them. A rule holding
+`/api/v1/deep/orders` and `/cart/*` is therefore placed by its first path, and can sit above a rule that
+beats it on a request to `/cart`.
+
+**An invented example**, because this repo has no saved case to quote. You save two rules on the same path:
+
+1. `GET /api/orders` answers 404. It has no query condition.
+2. `GET /api/orders?reload=0` answers 500, with "Match the full URL" on.
+
+| The app requests | Which rule answers | Why |
+|---|---|---|
+| `/api/orders?reload=0` | the 500 rule | Both match, and test 3 separates them: the 500 rule pins the query. |
+| `/api/orders` | the 404 rule | The 500 rule needs the query `?reload=0`, so it does not match at all. |
+| `/api/orders?reload=1` | the 404 rule | Same reason: the query is not the one the 500 rule pinned. |
+
+Saving the rules the other way round changes nothing, and neither does editing one of them.
+
+When you add a rule with an endpoint that an older rule already has, the new rule takes that endpoint from
+the older one. Two rules that differ only by method do not take endpoints from each other, because they
+never answer the same request.
 
 A trailing `/` does not matter: the rule `/api/users/` matches `/api/users`, and the rule `/api/users`
 matches `/api/users/`. The rule `/` alone matches only the root path.
@@ -724,7 +757,7 @@ npm test
 npm pack
 ```
 
-`npm test` runs 210 tests in 7 files. `npm pack` builds `dist/` first, then writes
+`npm test` runs 219 tests in 7 files. `npm pack` builds `dist/` first, then writes
 `dsquares-dev-mocks-0.3.1.tgz`. The build starts with `npm run build:css`: Tailwind 3 compiles
 `src/runtime/panel/panel.css` into `src/runtime/panel/styles.generated.ts`, a file git ignores. The panel
 puts that CSS inside its shadow root (a separate DOM tree that your app's CSS cannot reach). The build
