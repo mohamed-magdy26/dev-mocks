@@ -329,7 +329,11 @@ export default function DevMocksPanel({ shortcut }: { shortcut: Shortcut }) {
           onDrop={preventFileDrop}
           className={clsx(
             POP_CORNER[corner],
-            'fixed z-top flex h-pop w-pop animate-pop-in flex-col overflow-hidden rounded-pop border border-line bg-panel shadow-pop narrow:h-pop-narrow narrow:w-auto',
+            // Do not put `overflow-hidden` alone here: a hidden box is still a scroll container, so
+            // focusing a visually hidden radio makes the browser scroll the whole panel out of sight.
+            // `overflow-clip` clips without scrolling; `overflow-hidden` stays as the fallback for
+            // browsers that do not support clip, and Tailwind emits the clip rule after the hidden one.
+            'fixed z-top flex h-pop w-pop animate-pop-in flex-col overflow-hidden overflow-clip rounded-pop border border-line bg-panel shadow-pop narrow:h-pop-narrow narrow:w-auto',
           )}
         >
           <header className="dm-head relative flex items-center justify-between gap-3 py-3.5 pl-4 pr-3">

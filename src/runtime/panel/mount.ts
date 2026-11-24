@@ -1,7 +1,8 @@
 import { createElement } from 'react'
-import { createRoot } from 'react-dom/client'
+import { createRoot, type Root } from 'react-dom/client'
 import { errorController } from '../controller.js'
 import DevMocksPanel from './DevMocksPanel.js'
+import { PanelCrash } from './PanelCrash.js'
 import { hiddenNotice, HIDDEN_KEY, ON_FLAG, readSetting, type Shortcut } from './settings.js'
 import { css } from './styles.generated.js'
 
@@ -10,8 +11,35 @@ const FONTS_ID = 'dev-mocks-fonts'
 const FONTS_URL =
   'https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap'
 
+/**
+ * The React root this copy of the module created. A dev server that hot-swaps this file hands the
+ * page a fresh copy whose variable is undefined, which is how `mountPanel` tells "already mounted,
+ * by me" from "a host element left behind by a copy of this module that no longer renders".
+ */
+let root: Root | undefined
+
+function panel(shortcut: Shortcut) {
+  // Wrapped, so a render error inside the panel shows the message instead of leaving a blank shadow root.
+  return createElement(PanelCrash, null, createElement(DevMocksPanel, { shortcut }))
+}
+
 export function mountPanel(shortcut: Shortcut): void {
-  if (document.getElementById(HOST_ID)) return
+  const existing = document.getElementById(HOST_ID)
+  if (existing && root) {
+    // Mounted by this same copy of the module, so rendering again is all that is needed.
+    root.render(panel(shortcut))
+    return
+  }
+  // A host with no root of ours belongs to a copy of this module the dev server has replaced. Its
+  // React root still points at the old container and will never render again, so the panel would
+  // stay an empty box in the shadow root's dark background. Removing it starts the panel over.
+  existing?.remove()
+
+  // Our own root from an earlier call now renders into a container no longer in the page, because the
+  // line above removed its host, or the host app did. Unmounting it runs the panel's cleanup, so its
+  // keyboard listener and its subscription to the rule store stop before the new root adds its own.
+  root?.unmount()
+  root = undefined
 
   const notice = hiddenNotice(
     {
@@ -42,5 +70,6 @@ export function mountPanel(shortcut: Shortcut): void {
   style.textContent = css
   const container = document.createElement('div')
   shadow.append(style, container)
-  createRoot(container).render(createElement(DevMocksPanel, { shortcut }))
+  root = createRoot(container)
+  root.render(panel(shortcut))
 }
