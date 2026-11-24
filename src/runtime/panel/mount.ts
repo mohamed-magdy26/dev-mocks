@@ -51,7 +51,8 @@ export function mountPanel(keys: Keys): void {
     {
       shrunk: readSetting(SHRUNK_KEY) === ON_FLAG,
       paused: errorController.isPaused(),
-      count: errorController.getAllConfigs().length,
+      live: errorController.liveCount(),
+      saved: errorController.getAllConfigs().length,
     },
     keys.shrinkShortcut,
   )

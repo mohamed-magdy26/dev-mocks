@@ -43,6 +43,13 @@ export interface MockConfig extends MockAnswer {
    * that answer differently.
    */
   matchMethod?: boolean
+  /**
+   * True while the developer has this one rule paused. The rule stays saved and keeps its answer,
+   * but no request matches it, so the real server answers instead. Absent means live, which is what
+   * every rule saved before this field existed is. The "Mock rules" switch is the separate, global
+   * pause: it stops every rule at once and does not touch this field.
+   */
+  paused?: boolean
 }
 
 /** Splits the panel's "Endpoints" text at commas. A comma inside a query (`?ids=1,2`) stays, unless a space, "/" or "http" follows it. */
@@ -270,6 +277,8 @@ class ErrorMockController {
     if (this.paused) return undefined
     const url = new URL(request.url)
     return [...this.configs].reverse().find((config) => {
+      // First, so a paused rule never shadows a live one below it in the list.
+      if (config.paused) return false
       // Do not remove the `config.origin` test: rules saved before this field existed have no origin,
       // and must keep matching every origin instead of matching nothing.
       if (config.matchOrigin && config.origin && url.origin !== config.origin) return false
@@ -291,11 +300,34 @@ class ErrorMockController {
    * that uploads a large file does not have it read into a string for rules that ignore it.
    */
   wantsBody(): boolean {
-    return this.configs.some((config) => config.bodyMatch)
+    return this.configs.some((config) => config.bodyMatch && !config.paused)
   }
 
   getAllConfigs(): MockConfig[] {
     return [...this.configs]
+  }
+
+  /**
+   * Pauses one rule, or starts it again, leaving it where it stands in the list. It is edited in
+   * place on purpose: the list order decides which rule wins when two of them match one request, and
+   * going through `addConfig` would push the rule to the end and quietly change that order.
+   * Returns false when the browser refused to store the list.
+   */
+  setRulePaused(rule: MockConfig, paused: boolean): boolean {
+    this.loadFromLocalStorage()
+    this.configs = this.configs.map((c) => {
+      if (ruleKey(c) !== ruleKey(rule)) return c
+      // Resuming deletes the field instead of writing `false`, so a resumed rule is stored exactly
+      // like a rule that was never paused, and no dead field builds up in `dev-mocks:rules`.
+      const { paused: _was, ...rest } = c
+      return paused ? { ...rest, paused: true } : rest
+    })
+    return this.saveToLocalStorage()
+  }
+
+  /** Rules that can answer a request now. A rule the developer paused on its own row is not one. */
+  liveCount(): number {
+    return this.configs.filter((config) => !config.paused).length
   }
 
   isPaused(): boolean {

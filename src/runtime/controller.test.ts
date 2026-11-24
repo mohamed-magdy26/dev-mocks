@@ -260,6 +260,50 @@ describe('errorController.getConfigForRequest', () => {
     expect(errorController.clearAll()).toBe(true)
     expect(errorController.isPaused()).toBe(false)
   })
+
+  it('never matches a rule the developer paused on its own row', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/menu'], paused: true })
+    expect(errorController.getConfigForRequest(request('https://api.test/api/menu'))).toBeUndefined()
+  })
+
+  it('lets a live rule answer while another rule on a different path is paused', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/menu'], paused: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/cart'] })
+    expect(errorController.getConfigForRequest(request('https://api.test/api/menu'))).toBeUndefined()
+    expect(errorController.getConfigForRequest(request('https://api.test/api/cart'))?.scenario).toBe('404')
+  })
+
+  it('counts only the live rules', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/menu'], paused: true })
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/cart'] })
+    expect(errorController.getAllConfigs()).toHaveLength(2)
+    expect(errorController.liveCount()).toBe(1)
+  })
+
+  it('pauses one rule and resumes it, leaving its place in the list alone', () => {
+    errorController.addConfig({ scenario: '500', endpoints: ['/api/menu'] })
+    errorController.addConfig({ scenario: '404', endpoints: ['/api/cart'] })
+    const [menu] = errorController.getAllConfigs()
+
+    expect(errorController.setRulePaused(menu, true)).toBe(true)
+    expect(errorController.getConfigForRequest(request('https://api.test/api/menu'))).toBeUndefined()
+    expect(errorController.getAllConfigs()[0].endpoints).toEqual(['/api/menu'])
+
+    expect(errorController.setRulePaused(menu, false)).toBe(true)
+    expect(errorController.getConfigForRequest(request('https://api.test/api/menu'))?.scenario).toBe('500')
+    // Resuming removes the field, so the rule is stored exactly as it was before the pause.
+    expect(Object.hasOwn(errorController.getAllConfigs()[0], 'paused')).toBe(false)
+  })
+
+  it('does not ask for the request body for a paused body rule', () => {
+    errorController.addConfig({
+      scenario: '500',
+      endpoints: ['/api/checkout'],
+      bodyMatch: { field: 'coupon', value: 'EXPIRED' },
+      paused: true,
+    })
+    expect(errorController.wantsBody()).toBe(false)
+  })
 })
 
 describe('matching on the HTTP method', () => {

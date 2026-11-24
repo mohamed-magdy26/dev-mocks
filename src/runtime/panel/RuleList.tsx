@@ -1,10 +1,10 @@
 import { clsx } from 'clsx'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { callCounts, type MockConfig } from '../controller.js'
+import { callCounts, ruleKey, type MockConfig } from '../controller.js'
 import { FOCUS, ICON_BTN, LINK, NOTE } from './classes.js'
 import { Empty } from './Empty.js'
 import { describeRule, pathParts, plural, sequenceProgress } from './form.js'
-import { EditIcon, TrashIcon } from './icons.js'
+import { EditIcon, PauseIcon, PlayIcon, TrashIcon } from './icons.js'
 
 const CONFIRM_MS = 3000
 
@@ -13,11 +13,23 @@ interface RuleListProps {
   editing: number | null
   onEdit: (index: number) => void
   onRemove: (index: number) => void
+  onTogglePause: (index: number) => void
   onClearAll: () => void
+  focusRule: string | null
 }
 
-function RuleRow(props: { rule: MockConfig; used: number; editing: boolean; onEdit: () => void; onRemove: () => void }) {
-  const { rule, used, editing, onEdit, onRemove } = props
+interface RuleRowProps {
+  rule: MockConfig
+  used: number
+  editing: boolean
+  onEdit: () => void
+  onRemove: () => void
+  onTogglePause: () => void
+  takeFocus: boolean
+}
+
+function RuleRow(props: RuleRowProps) {
+  const { rule, used, editing, onEdit, onRemove, onTogglePause, takeFocus } = props
   const view = describeRule(rule)
   const progress = sequenceProgress(rule, used)
   const path = rule.endpoints.join(', ')
@@ -27,9 +39,15 @@ function RuleRow(props: { rule: MockConfig; used: number; editing: boolean; onEd
   const name = `${view.method === 'ANY' ? 'any method on' : view.method} ${path}`
   return (
     <li
-      className={clsx('grid grid-cols-rule items-center gap-2.5 rounded-field border bg-raised py-2 pl-2.5 pr-1.5', {
+      className={clsx('grid grid-cols-rule items-center gap-2 rounded-field border py-2 pl-2.5 pr-1.5', {
         'border-accent shadow-ring-accent': editing,
         'border-line': !editing,
+        // A paused rule sinks to the panel background and gets a dashed edge. Do not dim it with
+        // `opacity`: that mixes every colour in the row with the background behind it, which pushed
+        // the path and the amber line below the 4.5:1 contrast minimum. The row is still marked three
+        // ways without colour: the dashed edge, the amber line in words, and the play icon.
+        'border-dashed bg-panel': rule.paused,
+        'bg-raised': !rule.paused,
       })}
     >
       <span
@@ -47,6 +65,8 @@ function RuleRow(props: { rule: MockConfig; used: number; editing: boolean; onEd
           <span className="min-w-0 truncate">{tail}</span>
         </code>
         <span className="text-note text-faint">{view.meta}</span>
+        {/* Its own line, so pausing a rule never hides what the rule would do when it answers again. */}
+        {rule.paused && <span className="text-note text-amber">paused · the real server answers</span>}
         {/* No role="status": this changes on every request the rule answers, and a screen reader
             would read the whole running count out over whatever the user is doing. */}
         {progress && (
@@ -54,6 +74,24 @@ function RuleRow(props: { rule: MockConfig; used: number; editing: boolean; onEd
         )}
       </span>
       <span className="flex gap-0.5">
+        <button
+          type="button"
+          aria-label={
+            rule.paused
+              ? `Start the rule for ${name} answering again. This reloads the page.`
+              : `Pause the rule for ${name}. This reloads the page.`
+          }
+          title={
+            rule.paused
+              ? 'Resume · this rule answers again · reloads the page'
+              : 'Pause · the real server answers this one, the rule stays saved · reloads the page'
+          }
+          autoFocus={takeFocus}
+          onClick={onTogglePause}
+          className={clsx(ICON_BTN, FOCUS, rule.paused ? 'text-amber hover:text-ink' : 'hover:text-ink')}
+        >
+          {rule.paused ? <PlayIcon className="h-4 w-4" /> : <PauseIcon className="h-4 w-4" />}
+        </button>
         <button type="button" aria-label={`Edit rule for ${name}`} title="Edit" onClick={onEdit} className={clsx(ICON_BTN, FOCUS, 'hover:text-ink')}>
           <EditIcon className="h-4 w-4" />
         </button>
@@ -65,7 +103,7 @@ function RuleRow(props: { rule: MockConfig; used: number; editing: boolean; onEd
   )
 }
 
-export function RuleList({ rules, editing, onEdit, onRemove, onClearAll }: RuleListProps) {
+export function RuleList({ rules, editing, onEdit, onRemove, onTogglePause, onClearAll, focusRule }: RuleListProps) {
   const [armed, setArmed] = useState(false)
   // Subscribed once for the whole list, and the rows below read their own counts out of the store.
   // The value is a version number, not the counts: it only says that some count has moved.
@@ -104,6 +142,8 @@ export function RuleList({ rules, editing, onEdit, onRemove, onClearAll }: RuleL
                   editing={index === editing}
                   onEdit={() => onEdit(index)}
                   onRemove={() => onRemove(index)}
+                  onTogglePause={() => onTogglePause(index)}
+                  takeFocus={ruleKey(rule) === focusRule}
                 />
               ))}
             </ul>

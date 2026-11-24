@@ -70,6 +70,21 @@ export const TrashIcon = (props: IconProps) => (
   </Icon>
 )
 
+/** Two upright bars: this one rule is paused, and the real server answers it. */
+export const PauseIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M9 5v14" />
+    <path d="M15 5v14" />
+  </Icon>
+)
+
+/** A triangle pointing right: start this one rule answering again. */
+export const PlayIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M7 4.5v15l12-7.5Z" />
+  </Icon>
+)
+
 export const ChevronIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="m6 9 6 6 6-6" />

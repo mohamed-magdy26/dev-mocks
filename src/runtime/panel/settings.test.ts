@@ -186,27 +186,32 @@ describe('shrunkNotice', () => {
     'The \u2699\ufe0f tab is shrunk to a bar on the screen edge. Click the bar to open the panel, or press Alt+Shift+H to bring the tab back.'
 
   it('gives one line whenever the tab is shrunk, and counts the rules whether they are active or paused', () => {
-    expect(shrunkNotice({ shrunk: true, paused: false, count: 2 }, DEFAULT_SHRINK_SHORTCUT)).toBe(
+    expect(shrunkNotice({ shrunk: true, paused: false, live: 2, saved: 2 }, DEFAULT_SHRINK_SHORTCUT)).toBe(
       `[dev-mocks] 2 rules active. ${WAY}`,
     )
-    expect(shrunkNotice({ shrunk: true, paused: false, count: 1 }, DEFAULT_SHRINK_SHORTCUT)).toBe(
+    expect(shrunkNotice({ shrunk: true, paused: false, live: 1, saved: 1 }, DEFAULT_SHRINK_SHORTCUT)).toBe(
       `[dev-mocks] 1 rule active. ${WAY}`,
     )
-    expect(shrunkNotice({ shrunk: true, paused: true, count: 2 }, DEFAULT_SHRINK_SHORTCUT)).toBe(
+    expect(shrunkNotice({ shrunk: true, paused: true, live: 2, saved: 2 }, DEFAULT_SHRINK_SHORTCUT)).toBe(
       `[dev-mocks] 2 rules paused. ${WAY}`,
     )
-    expect(shrunkNotice({ shrunk: true, paused: false, count: 0 }, DEFAULT_SHRINK_SHORTCUT)).toBe(`[dev-mocks] ${WAY}`)
-    expect(shrunkNotice({ shrunk: true, paused: true, count: 0 }, DEFAULT_SHRINK_SHORTCUT)).toBe(`[dev-mocks] ${WAY}`)
-    expect(shrunkNotice({ shrunk: false, paused: false, count: 2 }, DEFAULT_SHRINK_SHORTCUT)).toBeUndefined()
+    expect(shrunkNotice({ shrunk: true, paused: false, live: 0, saved: 0 }, DEFAULT_SHRINK_SHORTCUT)).toBe(`[dev-mocks] ${WAY}`)
+    expect(shrunkNotice({ shrunk: true, paused: true, live: 0, saved: 0 }, DEFAULT_SHRINK_SHORTCUT)).toBe(`[dev-mocks] ${WAY}`)
+    expect(shrunkNotice({ shrunk: false, paused: false, live: 2, saved: 2 }, DEFAULT_SHRINK_SHORTCUT)).toBeUndefined()
   })
 
   it('names the state of the rules, and says "0 rules" when there is none, paused or not', () => {
-    expect([ruleStatus(2, false), ruleStatus(1, true), ruleStatus(0, true), ruleStatus(0, false)]).toEqual([
+    expect([ruleStatus(2, 2, false), ruleStatus(1, 1, true), ruleStatus(0, 0, true), ruleStatus(0, 0, false)]).toEqual([
       '2 rules active',
       '1 rule paused',
       '0 rules',
       '0 rules',
     ])
+  })
+
+  it('names the live rules apart from the saved ones', () => {
+    expect(ruleStatus(1, 2, false)).toBe('1 of 2 rules active')
+    expect(ruleStatus(0, 2, false)).toBe('2 rules paused')
   })
 })
 

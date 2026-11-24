@@ -326,9 +326,17 @@ export function matchesShortcut(event: KeyState, shortcut: Shortcut): boolean {
   )
 }
 
-export function ruleStatus(count: number, paused: boolean): string {
-  if (count === 0) return '0 rules'
-  return `${plural(count, 'rule')} ${paused ? 'paused' : 'active'}`
+/**
+ * The one line under "Dev Mocks" in the panel header, and the same line in the ⚙️ tab's tooltip.
+ * `live` is how many rules can answer a request now, and `saved` is how many exist. They differ when
+ * the developer pauses a rule on its own row. `paused` is the separate "Mock rules" switch, which
+ * stops every rule at once.
+ */
+export function ruleStatus(live: number, saved: number, paused: boolean): string {
+  if (saved === 0) return '0 rules'
+  if (paused || live === 0) return `${plural(saved, 'rule')} paused`
+  if (live < saved) return `${live} of ${saved} rules active`
+  return `${plural(live, 'rule')} active`
 }
 
 /**
@@ -336,9 +344,12 @@ export function ruleStatus(count: number, paused: boolean): string {
  * cannot see the tab can always find the way back. `shrink` is the key that brings the tab itself
  * back, which is the one worth printing: the bar on the edge already opens the panel on one click.
  */
-export function shrunkNotice(state: { shrunk: boolean; paused: boolean; count: number }, shrink: Shortcut): string | undefined {
+export function shrunkNotice(
+  state: { shrunk: boolean; paused: boolean; live: number; saved: number },
+  shrink: Shortcut,
+): string | undefined {
   if (!state.shrunk) return undefined
   const way = `The ⚙️ tab is shrunk to a bar on the screen edge. Click the bar to open the panel, or press ${shrink.label} to bring the tab back.`
-  if (state.count === 0) return `[dev-mocks] ${way}`
-  return `[dev-mocks] ${ruleStatus(state.count, state.paused)}. ${way}`
+  if (state.saved === 0) return `[dev-mocks] ${way}`
+  return `[dev-mocks] ${ruleStatus(state.live, state.saved, state.paused)}. ${way}`
 }

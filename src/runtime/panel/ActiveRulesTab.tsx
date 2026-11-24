@@ -7,6 +7,9 @@ interface ActiveRulesTabProps {
   editing: number | null
   onEdit: (index: number) => void
   onRemove: (index: number) => void
+  onTogglePause: (index: number) => void
+  /** The key of the rule whose pause button had focus before the last reload, or null. */
+  focusRule: string | null
   onClearAll: () => void
   paused: boolean
 }
@@ -21,6 +24,8 @@ export function ActiveRulesTab(props: ActiveRulesTabProps) {
         editing={props.editing}
         onEdit={props.onEdit}
         onRemove={props.onRemove}
+        onTogglePause={props.onTogglePause}
+        focusRule={props.focusRule}
         onClearAll={props.onClearAll}
       />
     </div>

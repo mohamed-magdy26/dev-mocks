@@ -23,7 +23,11 @@ interface LauncherProps {
   buttonRef: RefObject<HTMLButtonElement>
   open: boolean
   shrunk: boolean
-  count: number
+  /** Rules that can answer a request now. A rule paused on its own row is not one of them. */
+  live: number
+  /** Rules saved, paused ones included. */
+  saved: number
+  /** The "Mock rules" switch, which stops every rule at once. */
   paused: boolean
   spot: Spot
   shortcutLabel: string
@@ -127,7 +131,8 @@ function useEdgeDrag(onSpotChange: (spot: Spot) => void) {
 interface SliverProps {
   buttonRef: RefObject<HTMLButtonElement>
   open: boolean
-  count: number
+  live: number
+  saved: number
   paused: boolean
   spot: Spot
   shortcutLabel: string
@@ -144,8 +149,12 @@ interface SliverProps {
  * to stay within reach.
  */
 function Sliver(props: SliverProps) {
-  const { buttonRef, open, count, paused, spot, shortcutLabel, shrinkLabel, autoFocus, onOpen } = props
-  const status = ruleStatus(count, paused)
+  const { buttonRef, open, live, saved, paused, spot, shortcutLabel, shrinkLabel, autoFocus, onOpen } = props
+  const status = ruleStatus(live, saved, paused)
+  const answering = live > 0 && !paused
+  // Every saved rule paused looks the same whether one switch did it or each row did, because what
+  // the developer needs from the edge of the screen is "nothing is being mocked right now".
+  const allPaused = saved > 0 && !answering
   const edge = EDGE[spot.edge]
   const bar = BAR[isSideEdge(spot.edge) ? 'side' : 'flat']
   const { dragging, press, handlers } = useEdgeDrag(props.onSpotChange)
@@ -175,12 +184,12 @@ function Sliver(props: SliverProps) {
           edge.bar,
           bar.thickness,
           // A rule to show makes the bar longer, so a glance at the edge says whether anything is mocked.
-          count === 0 ? bar.none : bar.rules,
+          saved === 0 ? bar.none : bar.rules,
           'dm-sliver ring-1 ring-panel transition-size duration-200 ease-dm',
           {
-            'animate-rec bg-accent': count > 0 && !paused,
-            'dm-sliver-paused': count > 0 && paused,
-            'bg-faint': count === 0,
+            'animate-rec bg-accent': answering,
+            'dm-sliver-paused': allPaused,
+            'bg-faint': saved === 0,
           },
         )}
       />
@@ -191,7 +200,8 @@ function Sliver(props: SliverProps) {
 interface FabProps {
   buttonRef: RefObject<HTMLButtonElement>
   open: boolean
-  count: number
+  live: number
+  saved: number
   paused: boolean
   spot: Spot
   shortcutLabel: string
@@ -202,11 +212,11 @@ interface FabProps {
 }
 
 function Fab(props: FabProps) {
-  const { buttonRef, open, count, paused, spot } = props
+  const { buttonRef, open, live, saved, paused, spot } = props
   const [near, setNear] = useState(false)
   const edge = EDGE[spot.edge]
-  const active = count > 0 && !paused
-  const pausedRules = count > 0 && paused
+  const active = live > 0 && !paused
+  const pausedRules = saved > 0 && !active
   const { dragging, press, handlers } = useEdgeDrag(props.onSpotChange)
   const idle = !open && !near && !dragging
   useSpotProperty(buttonRef, spot.at)
@@ -246,9 +256,9 @@ function Fab(props: FabProps) {
       aria-expanded={open}
       aria-controls={open ? 'dm-pop' : undefined}
       aria-haspopup="dialog"
-      aria-label={`Dev mocks panel. ${ruleStatus(count, paused)}. The arrow keys move this tab along the screen edge, and dragging moves it to another edge.`}
+      aria-label={`Dev mocks panel. ${ruleStatus(live, saved, paused)}. The arrow keys move this tab along the screen edge, and dragging moves it to another edge.`}
       aria-keyshortcuts={`${props.shortcutLabel} ${props.shrinkLabel}`}
-      title={`${ruleStatus(count, paused)} · drag to move · ${props.shortcutLabel} opens the panel · ${props.shrinkLabel} shrinks this tab`}
+      title={`${ruleStatus(live, saved, paused)} · drag to move · ${props.shortcutLabel} opens the panel · ${props.shrinkLabel} shrinks this tab`}
       onClick={press(props.onToggle)}
       onKeyDown={arrowMoveHandler(spot, props.onSpotChange)}
       {...handlers}
@@ -269,7 +279,7 @@ function Fab(props: FabProps) {
         className={clsx('absolute rounded-full', edge.stripe, {
           'bg-accent': active,
           'bg-amber': pausedRules,
-          'bg-line-strong': count === 0,
+          'bg-line-strong': saved === 0,
         })}
       />
       <GearIcon className="h-5 w-5 transition-transform duration-500 ease-dm group-aria-expanded:rotate-90" />
@@ -280,7 +290,9 @@ function Fab(props: FabProps) {
           'shadow-ring-amber': pausedRules,
         })}
       >
-        {count}
+        {/* Both numbers once they differ. With the live count alone, "no rules saved" and "every rule
+            paused" both print 0, and only the stripe's colour told them apart. */}
+        {live === saved ? live : `${live}/${saved}`}
       </span>
     </button>
   )
@@ -299,7 +311,8 @@ export function Launcher(props: LauncherProps) {
       <Sliver
         buttonRef={props.buttonRef}
         open={props.open}
-        count={props.count}
+        live={props.live}
+        saved={props.saved}
         paused={props.paused}
         spot={props.spot}
         shortcutLabel={props.shortcutLabel}
@@ -314,7 +327,8 @@ export function Launcher(props: LauncherProps) {
     <Fab
       buttonRef={props.buttonRef}
       open={props.open}
-      count={props.count}
+      live={props.live}
+      saved={props.saved}
       paused={props.paused}
       spot={props.spot}
       shortcutLabel={props.shortcutLabel}

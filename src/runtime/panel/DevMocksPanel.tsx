@@ -66,8 +66,13 @@ const NOT_FOUND = -1
 const OPEN_FLAG = '1'
 const CLOSED_FLAG = ''
 const FOCUS_SWITCH = 'switch'
-// Read once per page load: the switch reloads the page, and keyboard focus returns to it afterwards.
-const focusSwitchOnLoad = takeSession('focus') === FOCUS_SWITCH
+/** Written before a pause reloads the page, with the paused rule's key after it. */
+const FOCUS_RULE = 'rule:'
+// Read once per page load, and read only here: a control that reloads the page writes down which
+// control it was, so keyboard focus comes back to it instead of starting at the top of the app.
+const focusOnLoad = takeSession('focus')
+const focusSwitchOnLoad = focusOnLoad === FOCUS_SWITCH
+const focusRuleOnLoad = focusOnLoad?.startsWith(FOCUS_RULE) ? focusOnLoad.slice(FOCUS_RULE.length) : null
 
 /** A file dropped just outside the JSON box would otherwise make the browser leave the app and open the file. */
 function preventFileDrop(event: DragEvent<HTMLElement>) {
@@ -95,6 +100,10 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
   const [spot, setSpot] = useState<Spot>(readSpot)
   const [focusLauncher, setFocusLauncher] = useState(false)
   const [focusSwitch, setFocusSwitch] = useState(focusSwitchOnLoad)
+  // State, not the module value straight from storage: `autoFocus` fires on every mount of the
+  // button, and leaving the key set would pull focus back into the row each time the Active rules
+  // tab is mounted again, for example after a trip to the Rule tab.
+  const [focusRule, setFocusRule] = useState(focusRuleOnLoad)
   // The panel can be open while the ⚙️ tab is shrunk, so what was open last stands whichever it was.
   const [open, setOpen] = useState(() => readSession('open') === OPEN_FLAG)
   const [rules] = useState<MockConfig[]>(() => errorController.getAllConfigs())
@@ -118,8 +127,12 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
   const problem = findProblem(form, jsonCheck)
   // A note lasts only until the next edit, so it is shown before the problem, which the fields also show.
   const footer = note ?? problem
-  const count = rules.length
-  const status = ruleStatus(count, paused)
+  // Two counts, because they differ once one rule is paused on its own row: `saved` is how many
+  // rules exist, which is what the "Active rules" list shows, and `live` is how many can answer a
+  // request now, which is what the header line and the ⚙️ tab's badge report.
+  const saved = rules.length
+  const live = rules.filter((rule) => !rule.paused).length
+  const status = ruleStatus(live, saved, paused)
 
   useEffect(() => {
     if (!toast || toastHeld) return
@@ -130,7 +143,10 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
   const changeOpen = useCallback((next: boolean) => {
     setOpen(next)
     writeSession('open', next ? OPEN_FLAG : CLOSED_FLAG)
-    if (!next) setFocusSwitch(false)
+    if (!next) {
+      setFocusSwitch(false)
+      setFocusRule(null)
+    }
   }, [])
 
   const close = useCallback(() => {
@@ -245,6 +261,8 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
    */
   function changeTab(next: Tab, focus: { tab?: boolean; presets?: boolean } = {}) {
     setTab(next)
+    // Leaving the Active rules tab spends the key, so coming back does not steal focus from the tab.
+    setFocusRule(null)
     writeSession('tab', next)
     setFocusPresets(Boolean(focus.presets))
     bodyRef.current?.scrollTo({ top: 0 })
@@ -294,15 +312,34 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
 
   function remove(index: number) {
     if (!errorController.removeConfig(rules[index])) {
-      setNote({ text: REFUSED_CHANGE_TEXT, warn: true })
+      // The toast, not `note`: `note` is drawn in the Rule tab's footer, and this button is on the
+      // Active rules tab, so a `note` here would never reach the screen.
+      setToast({ text: REFUSED_CHANGE_TEXT })
       return
     }
     reloadWith('Rule removed. The page reloaded.')
   }
 
+  /**
+   * Pauses one rule, or starts it answering again. The page reloads for the same reason every other
+   * change here does: the app sends its requests once more, so the effect is on screen at once.
+   */
+  function togglePause(index: number) {
+    const rule = rules[index]
+    const next = !rule.paused
+    if (!errorController.setRulePaused(rule, next)) {
+      setToast({ text: REFUSED_CHANGE_TEXT })
+      return
+    }
+    // The rule's own key, so focus lands on this row's button again and the developer can press
+    // Enter twice to pause and resume without tabbing in from the top of the app each time.
+    writeSession('focus', `${FOCUS_RULE}${ruleKey(rule)}`)
+    reloadWith(next ? 'Rule paused. The page reloaded.' : 'Rule resumed. The page reloaded.')
+  }
+
   function clearAll() {
     if (!errorController.clearAll()) {
-      setNote({ text: REFUSED_CHANGE_TEXT, warn: true })
+      setToast({ text: REFUSED_CHANGE_TEXT })
       return
     }
     reloadWith('All rules removed. The page reloaded.')
@@ -364,7 +401,8 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
         buttonRef={fabRef}
         open={open}
         shrunk={shrunk}
-        count={count}
+        live={live}
+        saved={saved}
         paused={paused}
         spot={spot}
         shortcutLabel={shortcut.label}
@@ -407,9 +445,9 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
                 <p className="m-0 mt-px flex items-center gap-1.5 text-note text-dim">
                   <span
                     className={clsx('h-1.5 w-1.5 rounded-full', {
-                      'bg-accent shadow-live': count > 0 && !paused,
-                      'bg-amber': count > 0 && paused,
-                      'bg-faint': count === 0,
+                      'bg-accent shadow-live': live > 0 && !paused,
+                      'bg-amber': saved > 0 && (paused || live === 0),
+                      'bg-faint': saved === 0,
                     })}
                   />
                   {status}
@@ -417,7 +455,7 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
               </div>
             </div>
             <div className="relative flex items-center gap-1">
-              {(count > 0 || paused) && (
+              {(saved > 0 || paused) && (
                 <>
                   <label
                     title="Changing this reloads the page"
@@ -494,7 +532,7 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
                       'border-line text-dim': tab !== name,
                     })}
                   >
-                    {name === 'active' ? count : <RequestCount />}
+                    {name === 'active' ? saved : <RequestCount />}
                   </span>
                 )}
               </button>
@@ -523,6 +561,8 @@ export default function DevMocksPanel({ shortcut, shrinkShortcut }: { shortcut: 
                 editing={editing}
                 onEdit={editFromList}
                 onRemove={remove}
+                onTogglePause={togglePause}
+                focusRule={focusRule}
                 onClearAll={clearAll}
                 paused={paused}
               />
