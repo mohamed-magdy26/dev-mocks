@@ -221,7 +221,7 @@ Alt+Shift+H brings the ⚙️ tab back" (or "2 rules paused · …", or "0 rules
 The bar drags to another edge exactly like the ⚙️ tab, and the arrow keys slide it along its own
 edge, so you never have to bring the tab back just to move it out of the way. Its clickable box is
 small on purpose: 28 px by 10 px, a quarter of the area the old hidden button took, because whatever
-your app draws under that corner has to stay within reach of the mouse.
+your app draws under that strip of the edge has to stay within reach of the mouse.
 
 The panel opens 44 px in from the screen edge, which clears the 36 px ⚙️ tab. While the tab is
 shrunk it opens 20 px in instead, close against the 10 px bar that opened it.
@@ -283,6 +283,48 @@ The first five cards share one form, so you can change the status code or the bo
 - When the browser refuses to store a rule, for example because the site's localStorage is full, the panel
   does not reload. The footer turns amber, says "Not saved", and gives the size of the rule. The rules
   saved before stay as they were.
+
+### Narrow a rule to one kind of body
+
+`POST /api/orders` sends many orders, and usually you want only one of them to fail. The
+"Match on the request body" pair of boxes does that. "Field" takes the name of a field in the request's
+JSON body, and "Value" takes what it must hold.
+
+| When this happens | The rule does this |
+|---|---|
+| Both boxes are empty | The rule answers every body, which is how a rule with no body match behaves |
+| Field `coupon`, Value `EXPIRED` | It answers a request whose body is `{"coupon": "EXPIRED"}`, and leaves every other coupon to the real server |
+| Field `user.role`, Value `admin` | A dot reaches inside a nested field: `{"user": {"role": "admin"}}` |
+| The request's body is not JSON | It never matches, so the request goes to the real server |
+| One box is filled and the other is empty | The panel shows an error under the boxes and keeps "Save & reload" disabled |
+
+The value is compared as text, and spaces around it are dropped. The "Clear" button beside the label
+empties both boxes at once. In the rule's row in the "Active rules" tab, a body match reads as
+`· body coupon = EXPIRED` after the delay.
+
+### Answer differently after the first calls
+
+A retry is hard to test when a rule always answers the same way. The switch "Answer differently after
+the first calls" splits one rule's answer in two.
+
+Here is one rule, with the 500 card clicked, the count set to 2, and "Every call after that gets" set
+to "The real server". Walk one page through it:
+
+| The app's call | What it gets | The rule's row in "Active rules" says |
+|---|---|---|
+| 1st `GET /api/orders` | Status 500, so your retry code runs | `1 of 2 calls used` |
+| 2nd call | Status 500 again | `2 of 2 calls used · answering the real server now` (in amber) |
+| 3rd call | The real server's own answer | the same amber line |
+| You reload the page | Status 500 again, because the count starts over | `1 of 2 calls used` |
+
+The count field takes 1 or more, with chips for 1, 2 and 3 beside it. "Every call after that gets" has
+two choices: "A status code", which opens its own status and JSON boxes, or "The real server", which
+stops the rule answering at all once the first calls are used.
+
+Two things to know before you trust the count. Every request counts, including the ones you do not see:
+in development React runs an effect twice, so a page that fetches inside an effect sends two requests and
+one page load spends two calls. And the count lives only in the open page, never in storage, so every
+reload starts it again at the 1st call.
 
 ### The "Requests" tab
 
@@ -353,10 +395,16 @@ A short rule matches every path that ends the same way, on every domain. For exa
 both `/api/v1/Users` and `/admin/Users`. When you need only one of them, type more segments, such as
 `/api/v1/Users`.
 
-A rule matches every method (GET, POST, PUT, PATCH, DELETE) and both `fetch` and `XMLHttpRequest`
-(which axios uses). When two rules match the same request, the rule you added last wins. Editing a rule
-counts as adding it again. When you add a rule with an endpoint that an older rule already has, the new rule
-takes that endpoint from the older one.
+The box to the left of "Request path" picks the method. It starts on "Any", so the rule answers GET, POST,
+PUT, PATCH and DELETE alike. Pick one method and the rule answers that one only, which lets
+`GET /api/orders` and `POST /api/orders` be two rules with two different answers. A rule clicked in from
+the "Requests" tab arrives with the method that request used, already picked. Either way the rule answers
+both `fetch` and `XMLHttpRequest`, which is what axios uses.
+
+When two rules match the same request, the rule you added last wins. Editing a rule counts as adding it
+again. When you add a rule with an endpoint that an older rule already has, the new rule takes that
+endpoint from the older one. Two rules that differ only by method do not take endpoints from each other,
+because they never answer the same request.
 
 A trailing `/` does not matter: the rule `/api/users/` matches `/api/users`, and the rule `/api/users`
 matches `/api/users/`. The rule `/` alone matches only the root path.
@@ -475,8 +523,6 @@ file exists.
 - In a pnpm workspace, the lockfile sits at the workspace root, and `init` does not look there. `init`
   then installs msw with npm. Run `pnpm add -D "msw@^2"` first. `init` skips the install when msw is
   already in `package.json`.
-- A rule matches every method. A rule only for `POST /api/orders` that leaves `GET /api/orders` alone is
-  not possible yet.
 - One rule alone cannot be paused. The "Mock rules" switch pauses every rule at once. To turn one rule off for a while, remove it and add it again later.
 - A request sent with `mode: 'no-cors'` gets an opaque answer (an answer the page is not allowed to read),
   and MSW reports no answer for it. Its row in the "Requests" tab stays `pending`, and shows `no answer`
@@ -516,7 +562,7 @@ npm test
 npm pack
 ```
 
-`npm test` runs 123 tests in 7 files. `npm pack` builds `dist/` first, then writes
+`npm test` runs 200 tests in 7 files. `npm pack` builds `dist/` first, then writes
 `dsquares-dev-mocks-0.3.1.tgz`. The build starts with `npm run build:css`: Tailwind 3 compiles
 `src/runtime/panel/panel.css` into `src/runtime/panel/styles.generated.ts`, a file git ignores. The panel
 puts that CSS inside its shadow root (a separate DOM tree that your app's CSS cannot reach). The build
